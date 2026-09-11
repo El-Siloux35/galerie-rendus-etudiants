@@ -1,0 +1,223 @@
+---
+import { getCollection } from 'astro:content';
+import { getImage } from 'astro:assets';
+import Base from '../layouts/Base.astro';
+
+const subjects = (await getCollection('subjects', ({ data }) => !data.draft)).sort(
+  (a, b) => a.data.order - b.data.order,
+);
+const projects = await getCollection('projects', ({ data }) => !data.draft);
+
+const countBySubject = new Map<string, number>();
+for (const project of projects) {
+  const key = project.data.subject.id;
+  countBySubject.set(key, (countBySubject.get(key) ?? 0) + 1);
+}
+
+const rows = await Promise.all(
+  subjects.map(async (subject, i) => ({
+    id: subject.id,
+    title: subject.data.title,
+    year: subject.data.year,
+    index: String(i + 1).padStart(2, '0'),
+    count: countBySubject.get(subject.id) ?? 0,
+    // Vignette légère dédiée au survol : l'image d'origine ferait 900 px de large.
+    preview: (await getImage({ src: subject.data.cover, width: 620, format: 'webp' })).src,
+  })),
+);
+
+const years = [...new Set(subjects.map((s) => s.data.year))].sort();
+// Une seule promotion : on n'affiche pas « 2025–2025 ».
+const period = years.length > 1 ? `${years[0]}–${years.at(-1)}` : String(years[0]);
+---
+
+<Base title="Galerie des rendus étudiants">
+  <!-- Vignette qui suit le curseur. Remplie en WebGL par le script ; vide
+       et invisible si JS, WebGL ou le survol ne sont pas disponibles. -->
+  <div class="preview" data-preview-root aria-hidden="true"></div>
+
+  <section class="hero shell">
+    <p class="mono" data-reveal>
+      {period} · {subjects.length} sujets · {projects.length}{' '}
+      {projects.length > 1 ? 'rendus' : 'rendu'}
+    </p>
+    <h1 class="hero__title" data-reveal data-reveal-delay="0.08">
+      Ce qui sort de l’atelier
+    </h1>
+    <p class="hero__lede" data-reveal data-reveal-delay="0.16">
+      Chaque ligne est un sujet donné en classe. Dessous, les rendus des groupes —
+      avec les noms des étudiants et leur classe au moment du projet.
+    </p>
+  </section>
+
+  <nav class="subjects shell" aria-label="Sujets">
+    <ul data-subjects>
+      {
+        rows.map((row, i) => (
+          <li data-reveal data-reveal-delay={String(0.04 * i)}>
+            <a href={`/sujets/${row.id}`} data-preview-src={row.preview}>
+              <span class="subject__index mono">{row.index}</span>
+              <span class="subject__title">{row.title}</span>
+              <span class="subject__meta mono">
+                {row.year} · {row.count} {row.count > 1 ? 'rendus' : 'rendu'}
+              </span>
+              <span class="subject__arrow" aria-hidden="true">→</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </nav>
+
+  <script>
+    import { initSubjectPreview } from '../scripts/subject-preview';
+    import { initReveal } from '../scripts/reveal';
+    initReveal();
+    initSubjectPreview();
+  </script>
+
+  <style>
+    .preview {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 20;
+      width: clamp(190px, 17vw, 290px);
+      aspect-ratio: 3 / 4;
+      pointer-events: none;
+      will-change: transform;
+    }
+    .preview :global(.preview__canvas) {
+      width: 100%;
+      height: 100%;
+    }
+
+    .hero {
+      padding-block: clamp(3rem, 10vh, 6.5rem) clamp(2rem, 6vh, 3.5rem);
+      max-width: 78rem;
+    }
+
+    /* Tout le héros démarre à l'aplomb des titres de sujets, en dessous. */
+    .hero > * {
+      margin-left: var(--row-indent);
+    }
+
+    .hero__title {
+      margin-block: 0.32em 0.4em;
+      font-size: var(--step-5);
+      font-weight: 500;
+      line-height: 0.9;
+      letter-spacing: -0.05em;
+      font-variation-settings: 'wght' 500, 'wdth' 84;
+      /* Répartit les mots sur des lignes de longueur égale, sans coupure
+         écrite en dur : le navigateur recalcule à chaque largeur d'écran. */
+      text-wrap: balance;
+    }
+
+    .hero__lede {
+      max-width: 46ch;
+      font-size: var(--step-1);
+      line-height: 1.45;
+      text-wrap: pretty;
+    }
+
+
+    /* --- Les lignes de sujets ------------------------------------------ */
+    .subjects ul {
+      border-bottom: var(--rule) solid var(--line);
+    }
+
+    .subjects a {
+      position: relative;
+      isolation: isolate;
+      display: grid;
+      grid-template-columns: auto 1fr auto auto;
+      align-items: center;
+      gap: clamp(0.9rem, 3.5vw, 3rem);
+      padding-block: clamp(1rem, 2.4vw, 1.9rem);
+      border-top: var(--rule) solid var(--line);
+      overflow: hidden;
+    }
+
+    /* Le survol remplit la ligne depuis la gauche, comme un trait de plume. */
+    .subjects a::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      background: var(--veil);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.6s var(--ease);
+    }
+    .subjects a:hover::before,
+    .subjects a:focus-visible::before {
+      transform: scaleX(1);
+    }
+
+    .subject__index {
+      color: var(--faint);
+      align-self: start;
+      padding-top: 0.55em;
+    }
+
+    .subject__title {
+      font-size: var(--step-3);
+      font-weight: 500;
+      line-height: 1.02;
+      letter-spacing: -0.035em;
+      font-variation-settings: 'wght' 500, 'wdth' 88;
+      transition:
+        transform 0.65s var(--ease),
+        font-variation-settings 0.65s var(--ease);
+    }
+
+    .subject__meta {
+      white-space: nowrap;
+    }
+
+    .subject__arrow {
+      font-size: var(--step-1);
+      color: var(--faint);
+      transition:
+        transform 0.65s var(--ease),
+        color 0.4s var(--ease);
+    }
+
+    /* L'axe de largeur de la variable fait le travail : le titre s'élargit
+       au lieu de simplement grossir, et la ligne ne saute pas. */
+    .subjects a:hover .subject__title,
+    .subjects a:focus-visible .subject__title {
+      transform: translateX(clamp(0.4rem, 1.5vw, 1.5rem));
+      font-variation-settings: 'wght' 500, 'wdth' 112;
+    }
+    .subjects a:hover .subject__arrow,
+    .subjects a:focus-visible .subject__arrow {
+      transform: translateX(0.45rem);
+      color: var(--ink);
+    }
+
+    /* Le survol d'une ligne met les autres en retrait. */
+    @media (hover: hover) {
+      .subjects ul:has(a:hover) li:not(:hover) {
+        opacity: 0.32;
+      }
+      .subjects li {
+        transition: opacity 0.5s var(--ease);
+      }
+    }
+
+    @media (max-width: 44rem) {
+      .subjects a {
+        grid-template-columns: auto 1fr;
+        row-gap: 0.35rem;
+      }
+      .subject__meta {
+        grid-column: 2;
+      }
+      .subject__arrow {
+        display: none;
+      }
+    }
+  </style>
+</Base>

@@ -1,0 +1,186 @@
+---
+import { getCollection, getEntry, render } from 'astro:content';
+import { Image } from 'astro:assets';
+import Base from '../../layouts/Base.astro';
+import Media from '../../components/Media.astro';
+
+export async function getStaticPaths() {
+  const projects = await getCollection('projects', ({ data }) => !data.draft);
+  return projects.map((project) => ({ params: { id: project.id }, props: { project } }));
+}
+
+const { project } = Astro.props;
+const { Content } = await render(project);
+const subject = await getEntry(project.data.subject);
+
+// Navigation entre les rendus du même sujet, pour ne pas obliger
+// à repasser par la page du sujet.
+const siblings = (await getCollection('projects', ({ data }) => !data.draft))
+  .filter((p) => p.data.subject.id === project.data.subject.id)
+  .sort((a, b) => a.id.localeCompare(b.id));
+const position = siblings.findIndex((p) => p.id === project.id);
+const next = siblings[(position + 1) % siblings.length];
+---
+
+<Base
+  title={`${project.data.title} — ${subject!.data.title}`}
+  description={project.data.students.map((s) => s.name).join(', ')}
+>
+  <article class="project shell">
+    <header class="project__head">
+      <p class="mono" data-reveal>
+        <a href="/">Sujets</a> → <a href={`/sujets/${subject!.id}`}>{subject!.data.title}</a> →{' '}
+        {project.data.year}
+      </p>
+      <h1 class="project__title" data-reveal data-reveal-delay="0.06">{project.data.title}</h1>
+
+      <!-- La classe est celle de l'étudiant au moment du projet : elle est
+           stockée sur le rendu, pas sur une fiche étudiant globale. -->
+      <ul class="credits" data-reveal data-reveal-delay="0.12">
+        {
+          project.data.students.map((student) => (
+            <li>
+              <span class="credits__name">{student.name}</span>
+              <span class="credits__class mono">{student.class}</span>
+            </li>
+          ))
+        }
+      </ul>
+    </header>
+
+    <Image
+      class="project__cover"
+      src={project.data.cover}
+      alt={project.data.coverAlt}
+      widths={[720, 1440]}
+      sizes="(max-width: 60rem) 92vw, 70rem"
+      data-reveal
+    />
+
+    <div class="project__text prose" data-reveal>
+      <Content />
+    </div>
+
+    {
+      project.data.media.length > 0 && (
+        <section class="project__media">
+          <h2 class="mono section-label">Le rendu</h2>
+          <div class="media-stack">
+            {project.data.media.map((item) => (
+              <div data-reveal>
+                <Media item={item} />
+              </div>
+            ))}
+          </div>
+        </section>
+      )
+    }
+
+    {
+      next && next.id !== project.id && (
+        <a class="next" href={`/rendus/${next.id}`}>
+          <span class="mono">Rendu suivant</span>
+          <span class="next__title">{next.data.title}</span>
+        </a>
+      )
+    }
+  </article>
+
+  <script>
+    import { initReveal } from '../../scripts/reveal';
+    initReveal();
+  </script>
+
+  <style>
+    .project {
+      max-width: 70rem;
+      padding-block: clamp(3rem, 10vh, 6rem) 0;
+    }
+
+    .project__head a {
+      text-decoration: underline;
+      text-underline-offset: 0.25em;
+    }
+
+    .project__title {
+      margin-block: 0.35em 0.5em;
+      font-size: var(--step-4);
+      font-weight: 500;
+      line-height: 0.94;
+      letter-spacing: -0.045em;
+      font-variation-settings: 'wght' 500, 'wdth' 88;
+    }
+
+    .credits {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem 2.5rem;
+    }
+    .credits li {
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+    }
+    .credits__name {
+      font-size: var(--step-1);
+      letter-spacing: -0.015em;
+    }
+    .credits__class {
+      text-transform: none;
+      letter-spacing: 0.02em;
+    }
+
+    .project__cover {
+      width: 100%;
+      /* La source est au format portrait : on recadre pour que la
+         couverture n'occupe pas deux écrans de haut. */
+      aspect-ratio: 16 / 10;
+      max-height: 78svh;
+      object-fit: cover;
+      margin-top: clamp(2.5rem, 7vh, 4.5rem);
+      border: var(--rule) solid var(--line);
+      filter: grayscale(1) contrast(1.05);
+    }
+
+    .prose {
+      max-width: 56ch;
+      margin-top: clamp(2rem, 6vh, 3.5rem);
+      font-size: var(--step-1);
+      line-height: 1.55;
+      color: var(--muted);
+      text-wrap: pretty;
+    }
+    .prose :global(p + p) {
+      margin-top: 1em;
+    }
+
+    .section-label {
+      margin-block: clamp(3.5rem, 10vh, 6rem) 1.5rem;
+      font-weight: 400;
+    }
+
+    .media-stack {
+      display: grid;
+      gap: clamp(2.5rem, 7vh, 4.5rem);
+    }
+
+    .next {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      margin-top: clamp(4rem, 12vh, 8rem);
+      padding-block: 2rem;
+      border-top: var(--rule) solid var(--line-strong);
+    }
+    .next__title {
+      font-size: var(--step-2);
+      font-weight: 500;
+      letter-spacing: -0.03em;
+      font-variation-settings: 'wght' 500, 'wdth' 90;
+      transition: font-variation-settings 0.6s var(--ease);
+    }
+    .next:hover .next__title {
+      font-variation-settings: 'wght' 500, 'wdth' 112;
+    }
+  </style>
+</Base>

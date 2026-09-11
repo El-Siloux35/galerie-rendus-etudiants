@@ -1,0 +1,141 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = "Les rendus des étudiants, sujet par sujet." } = Astro.props;
+---
+
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <script is:inline>
+      // Avant le premier rendu : évite le flash de thème et permet de
+      // masquer les éléments animés uniquement si JS est bien là.
+      document.documentElement.classList.add('js');
+      try {
+        const t = localStorage.getItem('theme');
+        if (t) document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#contenu">Aller au contenu</a>
+
+    <header class="site-head shell">
+      <a class="site-head__name" href="/">
+        Galerie des rendus
+      </a>
+      <nav class="site-head__nav">
+        <a href="/">Sujets</a>
+        <button type="button" id="theme-toggle" aria-pressed="false">
+          <span class="visually-hidden">Inverser le contraste</span>
+          <span aria-hidden="true">Inverser</span>
+        </button>
+      </nav>
+    </header>
+
+    <main id="contenu">
+      <slot />
+    </main>
+
+    <footer class="site-foot shell">
+      <span class="mono">Travaux d’étudiants — tous droits réservés à leurs auteurs</span>
+      <span class="mono">{new Date().getFullYear()}</span>
+    </footer>
+
+    <script>
+      const btn = document.getElementById('theme-toggle');
+      btn?.addEventListener('click', () => {
+        const root = document.documentElement;
+        const next = root.dataset.theme === 'light' ? 'dark' : 'light';
+        root.dataset.theme = next;
+        btn.setAttribute('aria-pressed', String(next === 'light'));
+        try {
+          localStorage.setItem('theme', next);
+        } catch {}
+      });
+    </script>
+
+    <style>
+      .skip {
+        position: absolute;
+        left: var(--gutter);
+        top: -4rem;
+        z-index: 100;
+        padding: 0.6rem 1rem;
+        background: var(--ink);
+        color: var(--paper);
+        transition: top 0.2s;
+      }
+      .skip:focus {
+        top: 0.75rem;
+      }
+
+      .site-head {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding-block: 1.1rem;
+        background: color-mix(in srgb, var(--paper) 82%, transparent);
+        backdrop-filter: blur(14px);
+        border-bottom: var(--rule) solid var(--line);
+      }
+
+      .site-head__name {
+        font-size: var(--step-0);
+        font-weight: 600;
+        font-stretch: 88%;
+        letter-spacing: -0.01em;
+      }
+
+      .site-head__nav {
+        display: flex;
+        align-items: center;
+        gap: clamp(1rem, 3vw, 2rem);
+      }
+
+      .site-head__nav a,
+      #theme-toggle {
+        font-family: var(--font-mono);
+        font-size: var(--step--1);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        background: none;
+        border: 0;
+        padding: 0.35rem 0;
+        cursor: pointer;
+        transition: color 0.3s var(--ease);
+      }
+
+      .site-head__nav a:hover,
+      #theme-toggle:hover {
+        color: var(--ink);
+      }
+
+      .site-foot {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 1rem;
+        padding-block: 2.5rem;
+        margin-top: clamp(4rem, 12vh, 9rem);
+        border-top: var(--rule) solid var(--line);
+      }
+    </style>
+  </body>
+</html>

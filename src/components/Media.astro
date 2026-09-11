@@ -1,0 +1,146 @@
+---
+/**
+ * Affiche un média d'un rendu. Un seul composant pour tous les types :
+ * le schéma Zod garantit que les champs attendus sont présents, donc
+ * chaque branche peut s'écrire sans garde défensive.
+ */
+import type { CollectionEntry } from 'astro:content';
+
+type MediaEntry = CollectionEntry<'projects'>['data']['media'][number];
+interface Props {
+  item: MediaEntry;
+}
+const { item } = Astro.props;
+
+const figmaEmbed =
+  item.type === 'figma'
+    ? `https://www.figma.com/embed?embed_host=galerie&url=${encodeURIComponent(item.url)}`
+    : null;
+---
+
+<figure class="media">
+  <figcaption class="media__head">
+    <span class="mono">
+      {item.label ?? (item.type === 'image' ? item.alt : item.type)}
+    </span>
+    {
+      (item.type === 'pdf' || item.type === 'html' || item.type === 'video') && (
+        <a class="mono media__out" href={item.src} target="_blank" rel="noopener">
+          Ouvrir ↗
+        </a>
+      )
+    }
+    {
+      (item.type === 'figma' || item.type === 'link') && (
+        <a class="mono media__out" href={item.url} target="_blank" rel="noopener">
+          Ouvrir ↗
+        </a>
+      )
+    }
+  </figcaption>
+
+  {
+    item.type === 'image' && (
+      <img class="media__frame" src={item.src} alt={item.alt} loading="lazy" decoding="async" />
+    )
+  }
+
+  {
+    item.type === 'video' && (
+      <video class="media__frame" controls preload="metadata" poster={item.poster}>
+        <source src={item.src} type="video/mp4" />
+        <a href={item.src}>Télécharger la vidéo</a>
+      </video>
+    )
+  }
+
+  {
+    item.type === 'pdf' && (
+      <object class="media__frame media__frame--doc" data={`${item.src}#view=FitH`} type="application/pdf">
+        <p class="media__fallback">
+          Votre navigateur n’affiche pas les PDF. <a href={item.src}>Télécharger le document</a>.
+        </p>
+      </object>
+    )
+  }
+
+  {
+    /* Le rendu HTML de l'étudiant tourne isolé : il ne peut ni naviguer
+       la page hôte, ni accéder à son stockage. */
+    item.type === 'html' && (
+      <iframe
+        class="media__frame media__frame--doc"
+        src={item.src}
+        title={item.label}
+        loading="lazy"
+        sandbox="allow-scripts allow-popups allow-forms"
+      />
+    )
+  }
+
+  {
+    item.type === 'figma' && (
+      <iframe class="media__frame media__frame--doc" src={figmaEmbed} title={item.label} loading="lazy" allowfullscreen />
+    )
+  }
+
+  {
+    item.type === 'link' && (
+      <a class="media__link" href={item.url} target="_blank" rel="noopener">
+        {item.url.replace(/^https?:\/\//, '')}
+      </a>
+    )
+  }
+</figure>
+
+<style>
+  .media {
+    border-top: var(--rule) solid var(--line);
+    padding-top: 0.85rem;
+  }
+
+  .media__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .media__out {
+    color: var(--muted);
+    transition: color 0.3s var(--ease);
+  }
+  .media__out:hover {
+    color: var(--ink);
+  }
+
+  .media__frame {
+    width: 100%;
+    height: auto;
+    border: var(--rule) solid var(--line);
+    background: var(--veil);
+  }
+
+  .media__frame--doc {
+    aspect-ratio: 4 / 3;
+    height: auto;
+    display: block;
+  }
+
+  .media__fallback {
+    padding: 2rem;
+    color: var(--muted);
+  }
+  .media__fallback a {
+    color: var(--ink);
+    text-decoration: underline;
+  }
+
+  .media__link {
+    display: block;
+    padding: 1.2rem 0;
+    font-size: var(--step-1);
+    border-bottom: var(--rule) solid var(--line-strong);
+  }
+</style>
