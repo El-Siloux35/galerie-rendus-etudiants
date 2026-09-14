@@ -23,7 +23,7 @@ const next = siblings[(position + 1) % siblings.length];
 ---
 
 <Base
-  title={`${project.data.title} — ${subject!.data.title}`}
+  title={`${project.data.title} · ${subject!.data.title}`}
   description={project.data.students.map((s) => s.name).join(', ')}
 >
   <article class="project shell">
@@ -34,18 +34,23 @@ const next = siblings[(position + 1) % siblings.length];
       </p>
       <h1 class="project__title" data-reveal data-reveal-delay="0.06">{project.data.title}</h1>
 
-      <!-- La classe est celle de l'étudiant au moment du projet : elle est
-           stockée sur le rendu, pas sur une fiche étudiant globale. -->
-      <ul class="credits" data-reveal data-reveal-delay="0.12">
-        {
-          project.data.students.map((student) => (
-            <li>
-              <span class="credits__name">{student.name}</span>
-              <span class="credits__class mono">{student.class}</span>
-            </li>
-          ))
-        }
-      </ul>
+      <!-- La classe est celle du groupe au moment du projet. Elle n'est
+           répétée sous un nom que si cet étudiant vient d'une autre classe. -->
+      <div class="credits" data-reveal data-reveal-delay="0.12">
+        <ul class="credits__names">
+          {
+            project.data.students.map((student) => (
+              <li>
+                {student.name}
+                {student.class && student.class !== project.data.class && (
+                  <span class="credits__other mono">{student.class}</span>
+                )}
+              </li>
+            ))
+          }
+        </ul>
+        <p class="mono credits__class">{project.data.class}</p>
+      </div>
     </header>
 
     <Image
@@ -88,12 +93,15 @@ const next = siblings[(position + 1) % siblings.length];
 
   <script>
     import { initReveal } from '../../scripts/reveal';
+    import { initPdfViewers } from '../../scripts/pdf-viewer';
     initReveal();
+    initPdfViewers();
   </script>
 
   <style>
     .project {
-      max-width: 70rem;
+      max-width: 72rem;
+      margin-inline: auto;
       padding-block: clamp(3rem, 10vh, 6rem) 0;
     }
 
@@ -111,23 +119,19 @@ const next = siblings[(position + 1) % siblings.length];
       font-variation-settings: 'wght' 500, 'wdth' 88;
     }
 
-    .credits {
+    .credits__names {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.4rem 2.5rem;
-    }
-    .credits li {
-      display: flex;
-      flex-direction: column;
-      gap: 0.1rem;
-    }
-    .credits__name {
+      gap: 0.15rem 2.5rem;
       font-size: var(--step-1);
       letter-spacing: -0.015em;
     }
+    .credits__other {
+      margin-left: 0.5rem;
+      color: var(--muted);
+    }
     .credits__class {
-      text-transform: none;
-      letter-spacing: 0.02em;
+      margin-top: 0.35rem;
     }
 
     .project__cover {

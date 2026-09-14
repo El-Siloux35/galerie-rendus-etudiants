@@ -26,7 +26,7 @@ const figmaEmbed =
     {
       (item.type === 'pdf' || item.type === 'html' || item.type === 'video') && (
         <a class="mono media__out" href={item.src} target="_blank" rel="noopener">
-          Ouvrir ↗
+          {item.type === 'pdf' ? 'Télécharger ↗' : 'Ouvrir ↗'}
         </a>
       )
     }
@@ -56,11 +56,22 @@ const figmaEmbed =
 
   {
     item.type === 'pdf' && (
-      <object class="media__frame media__frame--doc" data={`${item.src}#view=FitH`} type="application/pdf">
-        <p class="media__fallback">
-          Votre navigateur n’affiche pas les PDF. <a href={item.src}>Télécharger le document</a>.
-        </p>
-      </object>
+      <div class="pdf" data-pdf-src={item.src} data-pdf-state="loading" tabindex="0">
+        <div class="pdf__stage" data-pdf-stage>
+          <canvas />
+        </div>
+        <div class="pdf__bar">
+          <button type="button" data-pdf-prev aria-label="Page précédente">
+            ←
+          </button>
+          <span class="mono" data-pdf-counter>
+            Chargement
+          </span>
+          <button type="button" data-pdf-next aria-label="Page suivante">
+            →
+          </button>
+        </div>
+      </div>
     )
   }
 
@@ -126,12 +137,6 @@ const figmaEmbed =
     background: var(--veil);
   }
 
-  .media__frame--doc {
-    aspect-ratio: 4 / 3;
-    height: auto;
-    display: block;
-  }
-
   /* Prototype Figma : pensé plein écran, donc 16/9. */
   .media__frame--app {
     aspect-ratio: 16 / 9;
@@ -139,13 +144,79 @@ const figmaEmbed =
     display: block;
   }
 
-  .media__fallback {
+  /* --- Lecteur PDF ---------------------------------------------------- */
+  .pdf {
+    border: var(--rule) solid var(--line);
+    background: var(--veil);
+  }
+  .pdf:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 4px;
+  }
+
+  .pdf__stage {
+    /* Remplacé par le ratio réel de la première page dès qu'elle est lue. */
+    aspect-ratio: 16 / 9;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+  }
+  .pdf__stage canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    opacity: 0;
+    transition: opacity 0.4s var(--ease);
+  }
+  .pdf[data-pdf-state='ready'] .pdf__stage canvas {
+    opacity: 1;
+  }
+
+  .pdf__bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.25rem;
+    padding: 0.7rem;
+    border-top: var(--rule) solid var(--line);
+  }
+  .pdf__bar button {
+    width: 2.25rem;
+    height: 2.25rem;
+    display: grid;
+    place-items: center;
+    font-size: var(--step-1);
+    color: var(--ink);
+    background: none;
+    border: var(--rule) solid var(--line);
+    border-radius: 999px;
+    cursor: pointer;
+    transition:
+      border-color 0.3s var(--ease),
+      opacity 0.3s var(--ease);
+  }
+  .pdf__bar button:hover:not(:disabled) {
+    border-color: var(--line-strong);
+  }
+  .pdf__bar button:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+  .pdf__bar [data-pdf-counter] {
+    min-width: 6ch;
+    text-align: center;
+  }
+
+  /* Le document n'a pas pu être lu : le lien de téléchargement du bandeau
+     reste la porte de sortie. */
+  .pdf[data-pdf-state='error'] .pdf__stage::after {
+    content: 'Aperçu indisponible. Utilisez le lien de téléchargement.';
     padding: 2rem;
+    text-align: center;
     color: var(--muted);
   }
-  .media__fallback a {
-    color: var(--ink);
-    text-decoration: underline;
+  .pdf[data-pdf-state='error'] .pdf__bar {
+    display: none;
   }
 
   .media__launch {

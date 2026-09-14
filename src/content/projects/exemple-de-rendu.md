@@ -4,9 +4,8 @@ subject: design-fiction
 year: 2025
 featured: false
 draft: true
-students:
-  - { name: Prénom Nom, class: B2 Design }
-  - { name: Prénom Nom, class: B1 Design }
+class: B2 Design
+students: [Prénom Nom, { name: Prénom Nom, class: B1 Design }]
 cover: ../../assets/covers/exemple-rendu.png
 coverAlt: Visuel d’exemple en noir et blanc
 media:

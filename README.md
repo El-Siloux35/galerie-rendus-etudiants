@@ -45,9 +45,8 @@ title: Musée des Arques
 subject: identite-visuelle     # doit correspondre à un fichier de subjects/
 year: 2025
 featured: true                 # remonte en tête de la page du sujet
-students:
-  - { name: Léa Martin, class: B2 Design }
-  - { name: Samuel Dupont, class: B2 Design }
+class: B2 Design               # classe du groupe au moment du projet
+students: [Léa Martin, Samuel Dupont]
 cover: ../../assets/covers/proj-musee.png
 coverAlt: Description de l'image pour les lecteurs d'écran
 media:
@@ -62,12 +61,16 @@ media:
 Texte libre affiché sur la page du rendu.
 ```
 
-> **La classe est celle du moment du projet.** Elle est portée par l'étudiant
-> à l'intérieur du rendu, pas par une fiche étudiant globale : la même personne
-> apparaît en B2 en 2025 et en B3 en 2026, ce qui est historiquement juste.
+> **La classe est celle du moment du projet**, portée par le rendu et non par
+> une fiche étudiant globale : la même personne apparaît en B2 en 2025 et en B3
+> en 2026, ce qui est historiquement juste.
+>
+> Si un membre du groupe vient d'une autre classe, il se note à part :
+> `students: [Léa Martin, { name: Tom Lefèvre, class: B1 Design }]`. Sa classe
+> s'affiche alors à côté de son nom ; les autres héritent de celle du rendu.
 
 Une erreur de saisie (sujet inexistant, champ manquant, URL invalide) fait
-échouer `npm run build` avec le nom du fichier fautif — le site en ligne n'est
+échouer `npm run build` avec le nom du fichier fautif ; le site en ligne n'est
 jamais cassé par une fiche mal remplie.
 
 ## Où poser les fichiers
@@ -115,7 +118,7 @@ ffmpeg -i source.mov -vcodec libx264 -crf 26 -preset slow -vf "scale=-2:1080" -a
 
 | Fichier | Rôle |
 |---|---|
-| `src/content.config.ts` | schémas des sujets et des rendus — la source de vérité des champs |
+| `src/content.config.ts` | schémas des sujets et des rendus, la source de vérité des champs |
 | `src/styles/global.css` | jetons de couleur, échelle typographique, grain |
 | `src/scripts/subject-preview.ts` | vignette WebGL qui suit le curseur sur l'accueil |
 | `src/scripts/reveal.ts` | apparition des blocs à l'entrée dans l'écran |

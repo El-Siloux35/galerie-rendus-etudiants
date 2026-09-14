@@ -6,6 +6,9 @@ import gsap from 'gsap';
  * permet d'échelonner une série sans écrire de timeline.
  */
 export function initReveal() {
+  // Signale au filet de sécurité de Base.astro que le script tourne.
+  document.documentElement.dataset.revealReady = 'true';
+
   const items = Array.from(document.querySelectorAll<HTMLElement>('[data-reveal]'));
   if (items.length === 0) return;
 

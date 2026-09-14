@@ -67,11 +67,19 @@ const mediaItem = z.discriminatedUnion('type', [
 ]);
 
 /**
+ * Un étudiant : son nom seul, ou un objet si sa classe diffère de celle
+ * du groupe (cas d'un rendu inter-classes).
+ */
+const student = z
+  .union([z.string(), z.object({ name: z.string(), class: z.string().optional() })])
+  .transform((value) => (typeof value === 'string' ? { name: value } : value));
+
+/**
  * Un rendu = le travail d'un groupe ou d'une personne sur un sujet.
  *
- * La classe est portée par l'étudiant DANS le rendu, et non par une fiche
- * étudiant globale : c'est la classe au moment du projet. Le même étudiant
- * peut donc apparaître en B2 en 2025 et en B3 en 2026.
+ * La classe est portée par le RENDU, et non par une fiche étudiant globale :
+ * c'est la classe du groupe au moment du projet. Le même étudiant peut donc
+ * apparaître en B2 en 2025 et en B3 en 2026.
  */
 const projects = defineCollection({
   loader: glob({ base: './src/content/projects', pattern: '**/*.md' }),
@@ -80,15 +88,9 @@ const projects = defineCollection({
       title: z.string(),
       subject: reference('subjects'),
       year: z.number().int(),
-      students: z
-        .array(
-          z.object({
-            name: z.string(),
-            /** Classe au moment du projet, ex. "B2 Design". */
-            class: z.string(),
-          }),
-        )
-        .min(1),
+      /** Classe du groupe au moment du projet, ex. "G4A". */
+      class: z.string(),
+      students: z.array(student).min(1),
       cover: image(),
       coverAlt: z.string(),
       /** Mis en avant en tête de la page du sujet. */

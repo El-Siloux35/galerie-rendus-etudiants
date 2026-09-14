@@ -17,7 +17,7 @@ const projects = (await getCollection('projects', ({ data }) => !data.draft))
   .sort((a, b) => Number(b.data.featured) - Number(a.data.featured) || b.data.year - a.data.year);
 ---
 
-<Base title={`${subject.data.title} — Galerie des rendus`} description={subject.data.brief}>
+<Base title={`${subject.data.title} · Galerie des rendus`} description={subject.data.brief}>
   <article class="subject shell">
     <header class="subject__head">
       <p class="mono" data-reveal>
@@ -59,7 +59,7 @@ const projects = (await getCollection('projects', ({ data }) => !data.draft))
               />
               <h3 class="card__title">{project.data.title}</h3>
               <p class="card__students mono">
-                {project.data.students.map((s) => `${s.name} — ${s.class}`).join(' · ')}
+                {project.data.students.map((s) => s.name).join(', ')} · {project.data.class}
               </p>
             </a>
           </li>
@@ -75,7 +75,6 @@ const projects = (await getCollection('projects', ({ data }) => !data.draft))
 
   <style>
     .subject {
-      max-width: 82rem;
       padding-block: clamp(3rem, 10vh, 6rem) 0;
     }
 

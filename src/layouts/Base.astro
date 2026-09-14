@@ -22,6 +22,17 @@ const { title, description = "Les rendus des étudiants, sujet par sujet." } = A
       // Avant le premier rendu : évite le flash de thème et permet de
       // masquer les éléments animés uniquement si JS est bien là.
       document.documentElement.classList.add('js');
+
+      // Filet de sécurité : les blocs [data-reveal] sont masqués en CSS et
+      // c'est le script d'apparition qui les révèle. Si ce script ne
+      // démarre pas (chunk bloqué, réseau coupé, erreur), la page resterait
+      // vide. Au bout de trois secondes sans signe de vie, on réaffiche
+      // tout : une page sans animation vaut mieux qu'une page blanche.
+      setTimeout(function () {
+        if (!document.documentElement.dataset.revealReady) {
+          document.documentElement.classList.remove('js');
+        }
+      }, 3000);
       try {
         const t = localStorage.getItem('theme');
         if (t) document.documentElement.dataset.theme = t;
@@ -49,7 +60,7 @@ const { title, description = "Les rendus des étudiants, sujet par sujet." } = A
     </main>
 
     <footer class="site-foot shell">
-      <span class="mono">Travaux d’étudiants — tous droits réservés à leurs auteurs</span>
+      <span class="mono">Travaux d’étudiants, tous droits réservés à leurs auteurs</span>
       <span class="mono">{new Date().getFullYear()}</span>
     </footer>
 
