@@ -70,6 +70,16 @@ const mediaItem = z.discriminatedUnion('type', [
 ]);
 
 /**
+ * Déduit le niveau d'une classe : « G4A » donne « G4 », « B2 Design » donne
+ * « B2 », « AD5 » reste « AD5 ». Évite de saisir deux fois la même chose,
+ * tout en laissant la possibilité de forcer le niveau à la main.
+ */
+function levelFromClass(value: string): string {
+  const first = value.trim().split(/\s+/)[0] ?? value;
+  return first.replace(/(\d)[A-Za-z]+$/, '$1');
+}
+
+/**
  * Un étudiant : son nom seul, ou un objet si sa classe diffère de celle
  * du groupe (cas d'un rendu inter-classes).
  */
@@ -93,6 +103,11 @@ const projects = defineCollection({
       year: z.number().int(),
       /** Classe du groupe au moment du projet, ex. "G4A". */
       class: z.string(),
+      /**
+       * Niveau servant au filtre de l'accueil, ex. "G4", "AD5".
+       * Laissé vide, il est déduit de la classe.
+       */
+      level: z.string().optional(),
       students: z.array(student).min(1),
       cover: image(),
       coverAlt: z.string(),
@@ -100,7 +115,10 @@ const projects = defineCollection({
       featured: z.boolean().default(false),
       media: z.array(mediaItem).default([]),
       draft: z.boolean().default(false),
-    }),
+    })
+    // Le niveau est toujours présent après lecture, déduit au besoin :
+    // les pages n'ont donc jamais à gérer le cas absent.
+    .transform((data) => ({ ...data, level: data.level ?? levelFromClass(data.class) })),
 });
 
 export const collections = { subjects, projects };

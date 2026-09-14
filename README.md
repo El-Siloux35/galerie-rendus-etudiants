@@ -46,6 +46,7 @@ subject: identite-visuelle     # doit correspondre à un fichier de subjects/
 year: 2025
 featured: true                 # remonte en tête de la page du sujet
 class: B2 Design               # classe du groupe au moment du projet
+level: B2                      # facultatif : déduit de la classe si absent
 students: [Léa Martin, Samuel Dupont]
 cover: ../../assets/covers/proj-musee.png
 coverAlt: Description de l'image pour les lecteurs d'écran
@@ -61,6 +62,11 @@ media:
 Texte libre affiché sur la page du rendu.
 ```
 
+> **Les trois entrées de l'accueil.** La page d'accueil se parcourt par sujet,
+> par niveau ou par année : ces trois valeurs viennent de `subject`, `level` et
+> `year`. Le niveau est déduit de la classe (« G4A » donne « G4 », « AD5 » reste
+> « AD5 ») ; on ne le précise que si la déduction tombe à côté.
+>
 > **La classe est celle du moment du projet**, portée par le rendu et non par
 > une fiche étudiant globale : la même personne apparaît en B2 en 2025 et en B3
 > en 2026, ce qui est historiquement juste.

@@ -1,6 +1,7 @@
 ---
 import { getCollection } from 'astro:content';
 import { getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
 import Base from '../layouts/Base.astro';
 
 const subjects = (await getCollection('subjects', ({ data }) => !data.draft)).sort(
@@ -8,30 +9,69 @@ const subjects = (await getCollection('subjects', ({ data }) => !data.draft)).so
 );
 const projects = await getCollection('projects', ({ data }) => !data.draft);
 
-const countBySubject = new Map<string, number>();
-for (const project of projects) {
-  const key = project.data.subject.id;
-  countBySubject.set(key, (countBySubject.get(key) ?? 0) + 1);
-}
+/** Vignette légère dédiée au survol : l'image d'origine fait 900 px de large. */
+const preview = async (cover: ImageMetadata) =>
+  (await getImage({ src: cover, width: 620, format: 'webp' })).src;
 
-const rows = await Promise.all(
-  subjects.map(async (subject, i) => ({
-    id: subject.id,
-    title: subject.data.title,
-    year: subject.data.year,
-    index: String(i + 1).padStart(2, '0'),
-    count: countBySubject.get(subject.id) ?? 0,
-    // Vignette légère dédiée au survol : l'image d'origine ferait 900 px de large.
-    preview: (await getImage({ src: subject.data.cover, width: 620, format: 'webp' })).src,
-  })),
+/** Un rendu représentatif d'un groupe, pour illustrer sa ligne. */
+const pick = (list: typeof projects) => list.find((p) => p.data.featured) ?? list[0];
+
+// --- Par sujet ---------------------------------------------------------
+const subjectRows = await Promise.all(
+  subjects.map(async (subject) => {
+    const count = projects.filter((p) => p.data.subject.id === subject.id).length;
+    return {
+      href: `/sujets/${subject.id}`,
+      label: subject.data.title,
+      meta: `${subject.data.year} · ${count} ${count > 1 ? 'rendus' : 'rendu'}`,
+      preview: await preview(subject.data.cover),
+    };
+  }),
 );
 
-const years = [...new Set(subjects.map((s) => s.data.year))].sort();
-// Une seule promotion : on n'affiche pas « 2025–2025 ».
-const period = years.length > 1 ? `${years[0]}–${years.at(-1)}` : String(years[0]);
+// --- Par niveau --------------------------------------------------------
+const levels = [...new Set(projects.map((p) => p.data.level))].sort((a, b) => a.localeCompare(b));
+const levelRows = await Promise.all(
+  levels.map(async (level) => {
+    const list = projects.filter((p) => p.data.level === level);
+    return {
+      href: `/niveaux/${level}`,
+      label: level,
+      meta: `${list.length} ${list.length > 1 ? 'rendus' : 'rendu'}`,
+      preview: await preview(pick(list)!.data.cover),
+    };
+  }),
+);
+
+// --- Par année ---------------------------------------------------------
+// De la plus récente à la plus ancienne : c'est le travail frais qu'on vient voir.
+const years = [...new Set(projects.map((p) => p.data.year))].sort((a, b) => b - a);
+const yearRows = await Promise.all(
+  years.map(async (year) => {
+    const list = projects.filter((p) => p.data.year === year);
+    return {
+      href: `/annees/${year}`,
+      label: `${year}-${year + 1}`,
+      meta: `${list.length} ${list.length > 1 ? 'rendus' : 'rendu'}`,
+      preview: await preview(pick(list)!.data.cover),
+    };
+  }),
+);
+
+const lists = [
+  { key: 'sujet', name: 'Par sujet', aria: 'Sujets', rows: subjectRows },
+  { key: 'niveau', name: 'Par niveau', aria: 'Niveaux', rows: levelRows },
+  { key: 'annee', name: 'Par année', aria: 'Années', rows: yearRows },
+];
+
+const allYears = [...new Set([...subjects.map((s) => s.data.year), ...years])].sort();
+const period =
+  allYears.length > 1
+    ? `${allYears[0]}-${allYears.at(-1)! + 1}`
+    : `${allYears[0]}-${allYears[0] + 1}`;
 ---
 
-<Base title="Galerie des rendus étudiants">
+<Base title="Galerie de rendu en design d’interface">
   <!-- Vignette qui suit le curseur. Remplie en WebGL par le script ; vide
        et invisible si JS, WebGL ou le survol ne sont pas disponibles. -->
   <div class="preview" data-preview-root aria-hidden="true"></div>
@@ -41,38 +81,49 @@ const period = years.length > 1 ? `${years[0]}–${years.at(-1)}` : String(years
       {period} · {subjects.length} sujets · {projects.length}{' '}
       {projects.length > 1 ? 'rendus' : 'rendu'}
     </p>
-    <h1 class="hero__title" data-reveal data-reveal-delay="0.08">
-      Ce qui sort de l’atelier
-    </h1>
-    <p class="hero__lede" data-reveal data-reveal-delay="0.16">
-      Chaque ligne est un sujet donné en classe. Dessous, les rendus des groupes,
-      avec les noms des étudiants et leur classe au moment du projet.
-    </p>
-  </section>
+    <h1 class="hero__title" data-reveal data-reveal-delay="0.08">Ce qui sort de l’atelier</h1>
 
-  <nav class="subjects shell" aria-label="Sujets">
-    <ul data-subjects>
+    <div class="filters" role="group" aria-label="Trier la liste" data-reveal data-reveal-delay="0.16">
       {
-        rows.map((row, i) => (
-          <li data-reveal data-reveal-delay={String(0.04 * i)}>
-            <a href={`/sujets/${row.id}`} data-preview-src={row.preview}>
-              <span class="subject__index mono">{row.index}</span>
-              <span class="subject__title">{row.title}</span>
-              <span class="subject__meta mono">
-                {row.year} · {row.count} {row.count > 1 ? 'rendus' : 'rendu'}
-              </span>
-              <span class="subject__arrow" aria-hidden="true">→</span>
-            </a>
-          </li>
+        lists.map((list, i) => (
+          <button type="button" data-filter={list.key} aria-pressed={String(i === 0)}>
+            {list.name}
+          </button>
         ))
       }
-    </ul>
-  </nav>
+    </div>
+  </section>
+
+  <div class="lists shell" data-lists>
+    {
+      lists.map((list, i) => (
+        <nav class="subjects" data-list={list.key} aria-label={list.aria} hidden={i !== 0}>
+          <ul>
+            {list.rows.map((row, j) => (
+              <li data-reveal data-reveal-delay={String(0.04 * j)}>
+                <a href={row.href} data-preview-src={row.preview}>
+                  <span class="row__index mono">{String(j + 1).padStart(2, '0')}</span>
+                  <span class="row__title">{row.label}</span>
+                  <span class="row__meta mono">{row.meta}</span>
+                  <span class="row__arrow" aria-hidden="true">
+                    →
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+          {list.rows.length === 0 && <p class="mono empty">Rien à afficher pour l’instant.</p>}
+        </nav>
+      ))
+    }
+  </div>
 
   <script>
     import { initSubjectPreview } from '../scripts/subject-preview';
     import { initReveal } from '../scripts/reveal';
+    import { initFilters } from '../scripts/filters';
     initReveal();
+    initFilters();
     initSubjectPreview();
   </script>
 
@@ -96,13 +147,12 @@ const period = years.length > 1 ? `${years[0]}–${years.at(-1)}` : String(years
       padding-block: clamp(3rem, 10vh, 6.5rem) clamp(2rem, 6vh, 3.5rem);
     }
 
-    /* Tout le héros démarre à l'aplomb des titres de sujets, en dessous. */
     .hero > * {
       margin-left: var(--row-indent);
     }
 
     .hero__title {
-      margin-block: 0.32em 0.4em;
+      margin-block: 0.32em 0.5em;
       font-size: var(--step-5);
       font-weight: 500;
       line-height: 0.9;
@@ -113,15 +163,44 @@ const period = years.length > 1 ? `${years[0]}–${years.at(-1)}` : String(years
       text-wrap: balance;
     }
 
-    .hero__lede {
-      max-width: 46ch;
-      font-size: var(--step-1);
-      line-height: 1.45;
-      text-wrap: pretty;
+    /* --- Filtres -------------------------------------------------------- */
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
     }
 
+    .filters button {
+      font-family: var(--font-mono);
+      font-size: var(--step--1);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: none;
+      border: var(--rule) solid var(--line);
+      border-radius: 999px;
+      padding: 0.55rem 1.1rem;
+      cursor: pointer;
+      transition:
+        color 0.3s var(--ease),
+        border-color 0.3s var(--ease),
+        background-color 0.3s var(--ease);
+    }
 
-    /* --- Les lignes de sujets ------------------------------------------ */
+    .filters button:hover {
+      color: var(--ink);
+      border-color: var(--line-strong);
+    }
+
+    /* L'état actif s'inverse : c'est le seul aplat plein de la page, donc
+       il se repère sans couleur. */
+    .filters button[aria-pressed='true'] {
+      color: var(--paper);
+      background: var(--ink);
+      border-color: var(--ink);
+    }
+
+    /* --- Les lignes ----------------------------------------------------- */
     .subjects ul {
       border-bottom: var(--rule) solid var(--line);
     }
@@ -154,13 +233,13 @@ const period = years.length > 1 ? `${years[0]}–${years.at(-1)}` : String(years
       transform: scaleX(1);
     }
 
-    .subject__index {
+    .row__index {
       color: var(--faint);
       align-self: start;
       padding-top: 0.55em;
     }
 
-    .subject__title {
+    .row__title {
       font-size: var(--step-3);
       font-weight: 500;
       line-height: 1.02;
@@ -171,11 +250,11 @@ const period = years.length > 1 ? `${years[0]}–${years.at(-1)}` : String(years
         font-variation-settings 0.65s var(--ease);
     }
 
-    .subject__meta {
+    .row__meta {
       white-space: nowrap;
     }
 
-    .subject__arrow {
+    .row__arrow {
       font-size: var(--step-1);
       color: var(--faint);
       transition:
@@ -185,15 +264,19 @@ const period = years.length > 1 ? `${years[0]}–${years.at(-1)}` : String(years
 
     /* L'axe de largeur de la variable fait le travail : le titre s'élargit
        au lieu de simplement grossir, et la ligne ne saute pas. */
-    .subjects a:hover .subject__title,
-    .subjects a:focus-visible .subject__title {
+    .subjects a:hover .row__title,
+    .subjects a:focus-visible .row__title {
       transform: translateX(clamp(0.4rem, 1.5vw, 1.5rem));
       font-variation-settings: 'wght' 500, 'wdth' 112;
     }
-    .subjects a:hover .subject__arrow,
-    .subjects a:focus-visible .subject__arrow {
+    .subjects a:hover .row__arrow,
+    .subjects a:focus-visible .row__arrow {
       transform: translateX(0.45rem);
       color: var(--ink);
+    }
+
+    .empty {
+      padding-block: 2rem;
     }
 
     /* Le survol d'une ligne met les autres en retrait. */
@@ -211,10 +294,10 @@ const period = years.length > 1 ? `${years[0]}–${years.at(-1)}` : String(years
         grid-template-columns: auto 1fr;
         row-gap: 0.35rem;
       }
-      .subject__meta {
+      .row__meta {
         grid-column: 2;
       }
-      .subject__arrow {
+      .row__arrow {
         display: none;
       }
     }

@@ -69,7 +69,7 @@ function loadTexture(gl: WebGLRenderingContext, url: string): Texture {
 
 export function initSubjectPreview() {
   const root = document.querySelector<HTMLElement>('[data-preview-root]');
-  const list = document.querySelector<HTMLElement>('[data-subjects]');
+  const list = document.querySelector<HTMLElement>('[data-lists]');
   if (!root || !list) return;
 
   const fine = window.matchMedia('(hover: hover) and (pointer: fine)');

@@ -1,0 +1,119 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base
+  title="Ajouter un projet · Galerie de rendu en design d’interface"
+  description="Comment déposer un rendu d’étudiant dans la galerie."
+>
+  <article class="page shell">
+    <h1 class="page__title" data-reveal>Ajouter un projet</h1>
+
+    <div class="prose" data-reveal data-reveal-delay="0.08">
+      <p>
+        Le dépôt en ligne n’est pas encore ouvert. En attendant, un rendu s’ajoute
+        en déposant ses fichiers dans le dépôt et en écrivant une fiche.
+      </p>
+
+      <h2>Ce qu’un rendu peut contenir</h2>
+      <ul>
+        <li><strong>Une présentation PDF</strong>, affichée page à page dans la fiche.</li>
+        <li><strong>Des images</strong> (planches, photos de maquette, captures).</li>
+        <li><strong>Une vidéo</strong> au format MP4.</li>
+        <li><strong>Un site ou une page HTML</strong>, qui s’ouvre en plein écran.</li>
+        <li><strong>Un prototype Figma</strong>, intégré directement dans la page.</li>
+        <li><strong>Un lien externe</strong> vers n’importe quoi d’autre.</li>
+      </ul>
+
+      <h2>Les trois étiquettes obligatoires</h2>
+      <p>
+        Chaque rendu porte un <strong>sujet</strong>, un <strong>niveau</strong> et une
+        <strong>année</strong>. Ce sont les trois entrées de la page d’accueil, donc un
+        rendu sans elles serait introuvable.
+      </p>
+
+      <p class="note">
+        La marche à suivre complète est dans le fichier <code>README.md</code> du dépôt.
+      </p>
+    </div>
+  </article>
+
+  <script>
+    import { initReveal } from '../scripts/reveal';
+    initReveal();
+  </script>
+
+  <style>
+    .page {
+      max-width: 72rem;
+      margin-inline: auto;
+      padding-block: clamp(3rem, 10vh, 6rem) 0;
+    }
+
+    .page__title {
+      font-size: var(--step-4);
+      font-weight: 500;
+      line-height: 0.94;
+      letter-spacing: -0.045em;
+      font-variation-settings: 'wght' 500, 'wdth' 88;
+    }
+
+    .prose {
+      max-width: 50ch;
+      margin-inline: auto;
+      margin-top: clamp(2.5rem, 8vh, 5rem);
+      font-size: var(--step-1);
+      line-height: 1.55;
+      text-wrap: pretty;
+    }
+
+    .prose h2 {
+      margin-top: 2.2em;
+      margin-bottom: 0.6em;
+      font-size: var(--step-1);
+      font-weight: 600;
+      font-variation-settings: 'wght' 600, 'wdth' 92;
+    }
+
+    .prose p + p {
+      margin-top: 1em;
+    }
+
+    .prose ul {
+      display: grid;
+      gap: 0.45rem;
+    }
+
+    .prose li {
+      padding-left: 1.1rem;
+      position: relative;
+    }
+    .prose li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.72em;
+      width: 0.45rem;
+      height: var(--rule);
+      background: var(--line-strong);
+    }
+
+    .note {
+      margin-top: 2.5rem;
+      padding-top: 1.2rem;
+      border-top: var(--rule) solid var(--line);
+      color: var(--muted);
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+    }
+
+    @media (max-width: 52rem) {
+      .prose {
+        margin-inline: 0;
+      }
+    }
+  </style>
+</Base>

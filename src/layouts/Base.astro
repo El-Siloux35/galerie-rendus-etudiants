@@ -6,7 +6,7 @@ interface Props {
   description?: string;
 }
 
-const { title, description = "Les rendus des étudiants, sujet par sujet." } = Astro.props;
+const { title, description = "Les rendus des étudiants en design d’interface." } = Astro.props;
 ---
 
 <!doctype html>
@@ -44,13 +44,19 @@ const { title, description = "Les rendus des étudiants, sujet par sujet." } = A
 
     <header class="site-head shell">
       <a class="site-head__name" href="/">
-        Galerie des rendus
+        Galerie de rendu en design d’interface
       </a>
       <nav class="site-head__nav">
-        <a href="/">Sujets</a>
+        <a href="/ajouter">Ajouter un projet</a>
         <button type="button" id="theme-toggle" aria-pressed="false">
-          <span class="visually-hidden">Inverser le contraste</span>
-          <span aria-hidden="true">Inverser</span>
+          <span class="visually-hidden">Passer en thème clair</span>
+          <svg class="icon icon--sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.2" />
+            <path d="M12 2.4v2.5M12 19.1v2.5M2.4 12h2.5M19.1 12h2.5M5.2 5.2l1.8 1.8M17 17l1.8 1.8M18.8 5.2 17 7M7 17l-1.8 1.8" />
+          </svg>
+          <svg class="icon icon--moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20.4 14.7A8.7 8.7 0 0 1 9.3 3.6 8.7 8.7 0 1 0 20.4 14.7Z" />
+          </svg>
         </button>
       </nav>
     </header>
@@ -66,11 +72,23 @@ const { title, description = "Les rendus des étudiants, sujet par sujet." } = A
 
     <script>
       const btn = document.getElementById('theme-toggle');
+      const label = btn?.querySelector('.visually-hidden');
+
+      const describe = () => {
+        if (!btn || !label) return;
+        const light = document.documentElement.dataset.theme === 'light';
+        btn.setAttribute('aria-pressed', String(light));
+        // L'intitulé annonce la destination, pas l'état courant : c'est ce
+        // que la personne obtiendra en activant le bouton.
+        label.textContent = light ? 'Passer en thème sombre' : 'Passer en thème clair';
+      };
+      describe();
+
       btn?.addEventListener('click', () => {
         const root = document.documentElement;
         const next = root.dataset.theme === 'light' ? 'dark' : 'light';
         root.dataset.theme = next;
-        btn.setAttribute('aria-pressed', String(next === 'light'));
+        describe();
         try {
           localStorage.setItem('theme', next);
         } catch {}
@@ -109,8 +127,9 @@ const { title, description = "Les rendus des étudiants, sujet par sujet." } = A
       .site-head__name {
         font-size: var(--step-0);
         font-weight: 600;
-        font-stretch: 88%;
+        font-variation-settings: 'wght' 600, 'wdth' 88;
         letter-spacing: -0.01em;
+        max-width: 22ch;
       }
 
       .site-head__nav {
@@ -119,23 +138,50 @@ const { title, description = "Les rendus des étudiants, sujet par sujet." } = A
         gap: clamp(1rem, 3vw, 2rem);
       }
 
-      .site-head__nav a,
-      #theme-toggle {
+      .site-head__nav a {
         font-family: var(--font-mono);
         font-size: var(--step--1);
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--muted);
-        background: none;
-        border: 0;
-        padding: 0.35rem 0;
-        cursor: pointer;
         transition: color 0.3s var(--ease);
       }
 
       .site-head__nav a:hover,
       #theme-toggle:hover {
         color: var(--ink);
+      }
+
+      #theme-toggle {
+        /* Zone de clic confortable autour d'une icône de 18 px. */
+        display: grid;
+        place-items: center;
+        width: 2.4rem;
+        height: 2.4rem;
+        margin-right: -0.5rem;
+        color: var(--muted);
+        background: none;
+        border: 0;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: color 0.3s var(--ease);
+      }
+
+      #theme-toggle .icon {
+        width: 1.125rem;
+        height: 1.125rem;
+      }
+
+      /* L'icône montre la destination : soleil sur fond sombre, lune sur
+         fond clair. */
+      #theme-toggle .icon--moon {
+        display: none;
+      }
+      :global(html[data-theme='light']) #theme-toggle .icon--sun {
+        display: none;
+      }
+      :global(html[data-theme='light']) #theme-toggle .icon--moon {
+        display: block;
       }
 
       .site-foot {

@@ -1,0 +1,90 @@
+---
+/**
+ * Grille de rendus, partagée par les pages sujet, niveau et année.
+ */
+import { getCollection, type CollectionEntry } from 'astro:content';
+import { Image } from 'astro:assets';
+
+interface Props {
+  projects: CollectionEntry<'projects'>[];
+  /** Affiche le sujet sur chaque vignette (utile hors d'une page de sujet). */
+  withSubject?: boolean;
+  empty?: string;
+}
+const { projects, withSubject = false, empty = 'Aucun rendu publié pour l’instant.' } = Astro.props;
+
+const subjectTitles = new Map(
+  (await getCollection('subjects')).map((subject) => [subject.id, subject.data.title]),
+);
+---
+
+{projects.length === 0 && <p class="empty">{empty}</p>}
+
+<ul class="grid">
+  {
+    projects.map((project, i) => (
+      <li data-reveal data-reveal-delay={String(0.05 * (i % 3))}>
+        <a class="card" href={`/rendus/${project.id}`}>
+          <Image
+            class="card__img"
+            src={project.data.cover}
+            alt={project.data.coverAlt}
+            widths={[520, 1040]}
+            sizes="(max-width: 44rem) 92vw, 30vw"
+          />
+          <h3 class="card__title">{project.data.title}</h3>
+          <p class="card__meta mono">
+            {withSubject && <>{subjectTitles.get(project.data.subject.id)} · </>}
+            {project.data.students.map((s) => s.name).join(', ')} · {project.data.class}
+          </p>
+        </a>
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .empty {
+    font-size: var(--step-1);
+    color: var(--muted);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+    gap: clamp(1.5rem, 3vw, 2.75rem);
+  }
+
+  .card__img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 3 / 2;
+    object-fit: cover;
+    border: var(--rule) solid var(--line);
+    /* Le noir et blanc habille le site, pas le travail des étudiants :
+       la vignette reprend ses couleurs au survol. */
+    filter: grayscale(1) contrast(1.05);
+    transition:
+      transform 0.7s var(--ease),
+      filter 0.6s var(--ease);
+  }
+
+  .card:hover .card__img,
+  .card:focus-visible .card__img {
+    transform: scale(1.02);
+    filter: grayscale(0) contrast(1);
+  }
+
+  .card__title {
+    margin-top: 0.9rem;
+    font-size: var(--step-1);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+
+  .card__meta {
+    margin-top: 0.3rem;
+    text-transform: none;
+    letter-spacing: 0.01em;
+  }
+</style>

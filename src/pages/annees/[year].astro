@@ -1,0 +1,60 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import ProjectGrid from '../../components/ProjectGrid.astro';
+
+export async function getStaticPaths() {
+  const projects = await getCollection('projects', ({ data }) => !data.draft);
+  const years = [...new Set(projects.map((p) => p.data.year))];
+  return years.map((year) => ({
+    params: { year: String(year) },
+    props: { year, projects: projects.filter((p) => p.data.year === year) },
+  }));
+}
+
+const { year, projects } = Astro.props;
+const sorted = projects.sort((a, b) => a.data.title.localeCompare(b.data.title));
+const levels = [...new Set(sorted.map((p) => p.data.level))].sort();
+---
+
+<Base title={`${year}-${year + 1} · Galerie de rendu en design d’interface`}>
+  <article class="listing shell">
+    <header>
+      <p class="mono" data-reveal>
+        <a href="/#annee">Années</a>
+      </p>
+      <h1 class="listing__title" data-reveal data-reveal-delay="0.06">{year}-{year + 1}</h1>
+      <p class="mono listing__meta" data-reveal data-reveal-delay="0.12">
+        {levels.join(' · ')} · {sorted.length} {sorted.length > 1 ? 'rendus' : 'rendu'}
+      </p>
+    </header>
+
+    <ProjectGrid projects={sorted} withSubject />
+  </article>
+
+  <script>
+    import { initReveal } from '../../scripts/reveal';
+    initReveal();
+  </script>
+
+  <style>
+    .listing {
+      padding-block: clamp(3rem, 10vh, 6rem) 0;
+    }
+    .listing a {
+      text-decoration: underline;
+      text-underline-offset: 0.25em;
+    }
+    .listing__title {
+      margin-block: 0.35em 0.3em;
+      font-size: var(--step-4);
+      font-weight: 500;
+      line-height: 0.94;
+      letter-spacing: -0.045em;
+      font-variation-settings: 'wght' 500, 'wdth' 88;
+    }
+    .listing__meta {
+      margin-bottom: clamp(3rem, 9vh, 5rem);
+    }
+  </style>
+</Base>
