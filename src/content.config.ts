@@ -50,7 +50,10 @@ const mediaItem = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('figma'),
+    /** Lien de partage Figma, converti en lien d'intégration à l'affichage. */
     url: z.string().url(),
+    /** Proportions du cadre. Mettre "9 / 16" pour un prototype mobile. */
+    ratio: z.string().default('16 / 9'),
     label: z.string().default('Prototype Figma'),
   }),
   z.object({

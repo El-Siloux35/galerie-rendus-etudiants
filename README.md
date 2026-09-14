@@ -54,7 +54,7 @@ media:
   - { type: image, src: /rendus/2025/musee/planche.jpg, alt: Affiches déclinées }
   - { type: video, src: /rendus/2025/musee/film.mp4, poster: /rendus/2025/musee/poster.jpg }
   - { type: html,  src: /rendus/2025/musee/site/index.html, label: Site }
-  - { type: figma, url: "https://www.figma.com/proto/..." }
+  - { type: figma, url: "https://www.figma.com/proto/...", ratio: "9 / 16" }
   - { type: link,  url: "https://exemple.fr", label: Article de presse }
 ---
 
@@ -90,6 +90,19 @@ s'ouvrent dans un nouvel onglet, via un bouton. Deux raisons :
 
 Ces prototypes sont de toute façon conçus plein écran. Pour les embarquer
 vraiment, il faudrait servir `/rendus` depuis un sous-domaine distinct.
+
+### Intégrer un prototype Figma
+
+Coller le lien de partage tel quel (`/proto/`, `/design/` ou `/board/`) : il est
+converti automatiquement en lien d'intégration. Le point de départ du prototype,
+porté par les paramètres du lien, est conservé.
+
+**Deux conditions pour que l'aperçu s'affiche :**
+
+1. Le partage du fichier doit être réglé sur **« Tous les utilisateurs disposant
+   du lien » en lecture**. Sinon les visiteurs voient un mur de connexion.
+2. Pour un prototype mobile, préciser `ratio: "9 / 16"`, sinon le cadre reste
+   en 16/9 et l'écran apparaît minuscule au milieu de gris.
 
 ### Compresser un PDF avant de l'ajouter
 

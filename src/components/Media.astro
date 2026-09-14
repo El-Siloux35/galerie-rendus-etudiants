@@ -12,10 +12,35 @@ interface Props {
 }
 const { item } = Astro.props;
 
-const figmaEmbed =
-  item.type === 'figma'
-    ? `https://www.figma.com/embed?embed_host=galerie&url=${encodeURIComponent(item.url)}`
-    : null;
+/**
+ * Convertit un lien de partage Figma en lien d'intégration.
+ *
+ * Depuis Embed Kit 2.0, l'intégration passe par embed.figma.com et non plus
+ * par figma.com/embed, et le paramètre `embed-host` est obligatoire. On garde
+ * le chemin et les paramètres du lien d'origine, qui portent le point de
+ * départ du prototype.
+ *
+ * Renvoie null si le lien n'est pas un lien Figma : on affiche alors un
+ * simple bouton d'ouverture plutôt qu'un cadre vide.
+ */
+function toFigmaEmbed(raw: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.hostname !== 'figma.com' && !url.hostname.endsWith('.figma.com')) return null;
+
+  url.hostname = 'embed.figma.com';
+  url.protocol = 'https:';
+  // « file » est l'ancien nom de « design » dans les liens Figma.
+  url.pathname = url.pathname.replace(/^\/file\//, '/design/');
+  url.searchParams.set('embed-host', 'galerie-rendus');
+  return url.toString();
+}
+
+const figmaEmbed = item.type === 'figma' ? toFigmaEmbed(item.url) : null;
 ---
 
 <figure class="media">
@@ -94,9 +119,22 @@ const figmaEmbed =
   }
 
   {
-    item.type === 'figma' && (
-      <iframe class="media__frame media__frame--app" src={figmaEmbed} title={item.label} loading="lazy" allowfullscreen />
-    )
+    item.type === 'figma' &&
+      (figmaEmbed ? (
+        <iframe
+          class="media__frame media__frame--app"
+          style={`aspect-ratio: ${item.ratio};`}
+          src={figmaEmbed}
+          title={item.label}
+          loading="lazy"
+          allowfullscreen
+        />
+      ) : (
+        <a class="media__launch" href={item.url} target="_blank" rel="noopener">
+          <span class="media__launch-title">Ouvrir le prototype</span>
+          <span class="media__launch-note">Ce lien ne peut pas être intégré à la page.</span>
+        </a>
+      ))
   }
 
   {
