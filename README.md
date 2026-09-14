@@ -77,8 +77,26 @@ jamais cassé par une fiche mal remplie.
 | Couvertures | `src/assets/covers/` | optimisées automatiquement au build |
 | PDF, images, vidéos, sites | `public/rendus/<année>/<projet>/` | servis tels quels, chemin commençant par `/rendus/…` |
 
-Les pages HTML des étudiants tournent dans une iframe isolée : elles ne peuvent
-ni naviguer la page hôte, ni accéder à son stockage.
+Les pages HTML des étudiants ne sont **pas** embarquées dans la page : elles
+s'ouvrent dans un nouvel onglet, via un bouton. Deux raisons :
+
+- une iframe assez isolée pour être sûre casse tout prototype qui touche à
+  `sessionStorage`, à la caméra ou au plein écran ;
+- une iframe qui laisse passer ces API pourrait manipuler la galerie, puisque
+  les rendus sont servis depuis le même domaine.
+
+Ces prototypes sont de toute façon conçus plein écran. Pour les embarquer
+vraiment, il faudrait servir `/rendus` depuis un sous-domaine distinct.
+
+### Compresser un PDF avant de l'ajouter
+
+Un export InDesign dépasse facilement 50 Mo. `pdftocairo` (paquet `poppler`,
+`brew install poppler`) le réduit d'un facteur 10 à 15 sans perte visible, et
+garde le texte sélectionnable.
+
+```bash
+pdftocairo -pdf presentation-lourde.pdf presentation.pdf
+```
 
 ### Compresser une vidéo avant de l'ajouter
 

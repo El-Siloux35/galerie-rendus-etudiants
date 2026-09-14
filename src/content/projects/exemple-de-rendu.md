@@ -2,7 +2,8 @@
 title: Exemple de rendu
 subject: design-fiction
 year: 2025
-featured: true
+featured: false
+draft: true
 students:
   - { name: Prénom Nom, class: B2 Design }
   - { name: Prénom Nom, class: B1 Design }

@@ -34,5 +34,9 @@ Galerie de rendus d'étudiants. Voir `README.md` (comment ajouter un contenu) et
   `src/styles/global.css` ; ne pas écrire de valeur en dur.
 - Animations : GSAP, plus un seul effet WebGL (OGL) sur l'accueil. Toute
   animation ajoutée doit se couper sous `prefers-reduced-motion`.
+- Les rendus HTML d'étudiants s'ouvrent dans un onglet, jamais en iframe :
+  voir le commentaire dans `src/components/Media.astro` pour le pourquoi.
+- Les médias lourds (PDF InDesign, vidéos) sont compressés avant d'entrer
+  dans le dépôt — voir `README.md`.
 - Skills d'interface disponibles dans `.agents/skills/` (`better-ui`,
   `better-typography`, `interface-review`, `variant`…).

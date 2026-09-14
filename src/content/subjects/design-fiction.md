@@ -1,6 +1,6 @@
 ---
 title: Design Fiction
-year: 2025
+year: 2026
 order: 1
 brief: Brief à compléter.
 cover: ../../assets/covers/design-fiction.png

@@ -54,7 +54,7 @@ const projects = (await getCollection('projects', ({ data }) => !data.draft))
                 class="card__img"
                 src={project.data.cover}
                 alt={project.data.coverAlt}
-                widths={[420, 840]}
+                widths={[520, 1040]}
                 sizes="(max-width: 44rem) 92vw, 30vw"
               />
               <h3 class="card__title">{project.data.title}</h3>
@@ -139,18 +139,19 @@ const projects = (await getCollection('projects', ({ data }) => !data.draft))
     .card__img {
       width: 100%;
       height: auto;
-      aspect-ratio: 3 / 4;
+      aspect-ratio: 3 / 2;
       object-fit: cover;
       border: var(--rule) solid var(--line);
       filter: grayscale(1) contrast(1.05);
       transition:
         transform 0.7s var(--ease),
-        opacity 0.5s var(--ease);
+        filter 0.6s var(--ease);
     }
 
-    .card:hover .card__img {
+    .card:hover .card__img,
+    .card:focus-visible .card__img {
       transform: scale(1.02);
-      opacity: 0.82;
+      filter: grayscale(0) contrast(1);
     }
 
     .card__title {

@@ -65,22 +65,26 @@ const figmaEmbed =
   }
 
   {
-    /* Le rendu HTML de l'étudiant tourne isolé : il ne peut ni naviguer
-       la page hôte, ni accéder à son stockage. */
+    /* Rendu HTML d'étudiant : ouvert dans un onglet, pas embarqué.
+       Une iframe assez isolée pour être sûre (origine opaque) casse tout
+       prototype qui touche à sessionStorage, à la caméra ou au plein
+       écran ; et une iframe qui les laisse passer pourrait manipuler la
+       galerie, puisqu'elle est servie depuis le même domaine.
+       Ces pages sont de toute façon conçues plein écran : les ouvrir
+       telles quelles est aussi le meilleur moyen de les voir. */
     item.type === 'html' && (
-      <iframe
-        class="media__frame media__frame--doc"
-        src={item.src}
-        title={item.label}
-        loading="lazy"
-        sandbox="allow-scripts allow-popups allow-forms"
-      />
+      <a class="media__launch" href={item.src} target="_blank" rel="noopener">
+        <span class="media__launch-title">Ouvrir le rendu</span>
+        <span class="media__launch-note">
+          Le site s’ouvre dans un nouvel onglet, en plein écran.
+        </span>
+      </a>
     )
   }
 
   {
     item.type === 'figma' && (
-      <iframe class="media__frame media__frame--doc" src={figmaEmbed} title={item.label} loading="lazy" allowfullscreen />
+      <iframe class="media__frame media__frame--app" src={figmaEmbed} title={item.label} loading="lazy" allowfullscreen />
     )
   }
 
@@ -128,6 +132,13 @@ const figmaEmbed =
     display: block;
   }
 
+  /* Prototype Figma : pensé plein écran, donc 16/9. */
+  .media__frame--app {
+    aspect-ratio: 16 / 9;
+    height: auto;
+    display: block;
+  }
+
   .media__fallback {
     padding: 2rem;
     color: var(--muted);
@@ -135,6 +146,32 @@ const figmaEmbed =
   .media__fallback a {
     color: var(--ink);
     text-decoration: underline;
+  }
+
+  .media__launch {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    padding: clamp(2rem, 6vw, 3.5rem);
+    border: var(--rule) solid var(--line);
+    background: var(--veil);
+    transition: background-color 0.4s var(--ease);
+  }
+  .media__launch:hover {
+    background: color-mix(in srgb, var(--ink) 10%, transparent);
+  }
+  .media__launch-title {
+    font-size: var(--step-2);
+    font-weight: 500;
+    letter-spacing: -0.03em;
+    font-variation-settings: 'wght' 500, 'wdth' 90;
+    transition: font-variation-settings 0.5s var(--ease);
+  }
+  .media__launch:hover .media__launch-title {
+    font-variation-settings: 'wght' 500, 'wdth' 110;
+  }
+  .media__launch-note {
+    color: var(--muted);
   }
 
   .media__link {
