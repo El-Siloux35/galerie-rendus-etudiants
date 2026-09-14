@@ -145,9 +145,16 @@ const next = siblings[(position + 1) % siblings.length];
       border: var(--rule) solid var(--line);
     }
 
+    /* Le texte garde une longueur de ligne lisible (45 à 75 signes) et se
+       centre dans la page : le blanc se répartit en deux marges égales au
+       lieu de laisser un bord droit inachevé. La couverture et les médias
+       restent pleine largeur, ce qui donne le rythme large / étroit / large. */
     .prose {
-      max-width: 56ch;
-      margin-top: clamp(2rem, 6vh, 3.5rem);
+      /* 50ch et non 65 : `ch` mesure la largeur du zéro, plus large que
+         la moyenne des lettres, donc 50ch donne bien ~65 signes à l'œil. */
+      max-width: 50ch;
+      margin-inline: auto;
+      margin-top: clamp(2.5rem, 8vh, 5rem);
       font-size: var(--step-1);
       line-height: 1.55;
       color: var(--muted);
@@ -160,6 +167,12 @@ const next = siblings[(position + 1) % siblings.length];
     .section-label {
       margin-block: clamp(3.5rem, 10vh, 6rem) 1.5rem;
       font-weight: 400;
+    }
+
+    @media (max-width: 52rem) {
+      .prose {
+        margin-inline: 0;
+      }
     }
 
     .media-stack {
