@@ -142,12 +142,20 @@ const next = siblings[(position + 1) % siblings.length];
       font-variation-settings: 'wght' 500, 'wdth' 88;
     }
 
+    /* Les noms se lisent comme une ligne de générique, pas comme une
+       colonne de tableau : séparés par une virgule plutôt que par un grand
+       blanc, ils forment un seul bloc. */
     .credits__names {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.15rem 2.5rem;
+      column-gap: 0.4em;
+      row-gap: 0.1em;
       font-size: var(--step-1);
       letter-spacing: -0.015em;
+    }
+
+    .credits__names li:not(:last-child)::after {
+      content: ',';
     }
     .credits__other {
       margin-left: 0.5rem;
@@ -159,35 +167,40 @@ const next = siblings[(position + 1) % siblings.length];
 
     /* Étiquettes de classement. Ce sont des liens : chacune mène à l'index
        correspondant, ce que l'ancien fil d'Ariane ne permettait que pour
-       le sujet. */
+       le sujet. Sans cadre ni aplat : le seul aplat plein du site reste le
+       filtre actif de l'accueil. */
     .tags {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.5rem;
-      margin-top: 1.5rem;
+      column-gap: 0.75rem;
+      row-gap: 0.2rem;
+      margin-top: 0.9rem;
+    }
+
+    .tags li:not(:last-child)::after {
+      content: '·';
+      margin-left: 0.75rem;
+      color: var(--faint);
     }
 
     .tags a {
-      display: block;
       font-family: var(--font-mono);
       font-size: var(--step--1);
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--muted);
-      border: var(--rule) solid var(--line);
-      border-radius: 999px;
-      padding: 0.5rem 1rem;
+      text-decoration-line: underline;
+      text-decoration-color: transparent;
+      text-underline-offset: 0.35em;
       transition:
         color 0.3s var(--ease),
-        border-color 0.3s var(--ease),
-        background-color 0.3s var(--ease);
+        text-decoration-color 0.3s var(--ease);
     }
 
     .tags a:hover,
     .tags a:focus-visible {
-      color: var(--paper);
-      background: var(--ink);
-      border-color: var(--ink);
+      color: var(--ink);
+      text-decoration-color: currentColor;
     }
 
     .project__cover {
