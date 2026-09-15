@@ -128,6 +128,13 @@ const figmaEmbed = item.type === 'figma' ? toFigmaEmbed(item.url) : null;
           title={item.label}
           loading="lazy"
           allowfullscreen
+          /* Le cadre Figma peut emmener le visiteur hors de la galerie :
+             une interaction dans le prototype redirige la page hôte vers
+             figma.com. L'absence d'`allow-top-navigation` l'en empêche.
+             `allow-same-origin` ne rend ici que son origine à Figma, qui
+             reste un autre domaine que le nôtre : contrairement aux pages
+             HTML d'étudiants, le cadre n'obtient aucun accès à la galerie. */
+          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
         />
       ) : (
         <a class="media__launch" href={item.url} target="_blank" rel="noopener">
