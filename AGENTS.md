@@ -48,5 +48,31 @@ phrase en deux.
   voir le commentaire dans `src/components/Media.astro` pour le pourquoi.
 - Les médias lourds (PDF InDesign, vidéos) sont compressés avant d'entrer
   dans le dépôt (voir `README.md`).
+### Notion
+
+La base **Archives projet d'élèves** (`Privé LISAA`, source
+`collection://39536514-d2d5-802d-a2d3-000be1f4a5a5`) et la galerie doivent
+rester alignées dans les deux sens : tout rendu présent d'un côté existe de
+l'autre.
+
+Colonnes : `Nom`, `URL` (à écrire sous la clé `userDefined:URL`), `Sujet`,
+`Classe`, `Année` au format `2025/2026`. Les trois dernières sont des
+multi-select : une valeur inédite doit d'abord être ajoutée aux options.
+
+**Le corps de chaque fiche Notion reprend le lien Figma et les documents de la
+page du rendu**, sous la forme :
+
+```
+[Fiche sur la galerie](https://galerie-rendus-etudiants.vercel.app/rendus/<slug>)
+
+**Prototype Figma**
+- [<intitulé> (Figma)](<url>)
+
+**Documents de la fiche**
+- [<intitulé> (<type>)](<url absolue>)
+```
+
+Un rendu en brouillon le dit en première ligne, avec la raison.
+
 - Skills d'interface disponibles dans `.agents/skills/` (`better-ui`,
   `better-typography`, `interface-review`, `variant`…).
