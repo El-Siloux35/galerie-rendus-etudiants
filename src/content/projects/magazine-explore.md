@@ -6,7 +6,7 @@ featured: true
 class: G4
 students: [Tanguy, Ema, Lise, Thomas, Corentin, Ludivine]
 cover: ../../assets/covers/magazine-explore.jpg
-coverAlt: Page d’accueil du magazine Explore : le mot « Explore. » en très grand par-dessus une photographie de lac de montagne
+coverAlt: "Page d’accueil du magazine Explore : le mot « Explore. » en très grand par-dessus une photographie de lac de montagne"
 media:
   - { type: figma, url: "https://www.figma.com/proto/CbjZdwY8WcvjtZUQXgm4rW/Magazine?node-id=1022-1069&scaling=scale-down&content-scaling=fixed&page-id=113%3A10", label: Prototype }
 ---
