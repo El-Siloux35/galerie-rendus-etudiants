@@ -17,7 +17,7 @@ const projects = (await getCollection('projects', ({ data }) => !data.draft))
   .sort((a, b) => Number(b.data.featured) - Number(a.data.featured) || b.data.year - a.data.year);
 ---
 
-<Base title={`${subject.data.title} · Galerie des rendus`} description={subject.data.brief}>
+<Base title={`${subject.data.title} · Galerie de rendu en design d’interface`} description={subject.data.brief}>
   <article class="subject shell">
     <header class="subject__head">
       <p class="mono" data-reveal>

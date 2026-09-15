@@ -1,12 +1,12 @@
 ## Development
 
-When starting the dev server, use background mode:
+Le serveur de dev est démarré par l'aperçu, via la configuration `galerie`
+de `.claude/launch.json` (port 4321).
 
-```
-astro dev --background
-```
-
-Manage the background server with `astro dev stop`, `astro dev status`, and `astro dev logs`.
+**Ne pas lancer `astro dev --background` en parallèle** : les deux mécanismes
+se disputeraient le port 4321 et l'aperçu refuserait de démarrer. Si un
+serveur d'arrière-plan tourne déjà, l'arrêter d'abord avec `astro dev stop`
+(`astro dev status` pour le savoir).
 
 ## Documentation
 
