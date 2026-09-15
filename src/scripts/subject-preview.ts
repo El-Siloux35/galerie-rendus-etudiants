@@ -32,7 +32,19 @@ const FRAGMENT = /* glsl */ `
   uniform float uVel;     // vitesse horizontale du curseur, normalisée
   uniform float uOpen;    // 0 vignette fermée, 1 ouverte
   uniform float uTime;
+  uniform float uRatioA;  // proportions de l'image courante
+  uniform float uRatioB;  // proportions de l'image suivante
+  uniform float uPlane;   // proportions de la vignette
   varying vec2 vUv;
+
+  // Recadre sans déformer, comme object-fit: cover. Sans cela une image
+  // paysage étirée dans une vignette portrait devient méconnaissable.
+  vec2 cover(vec2 uv, float image) {
+    vec2 s = uPlane < image
+      ? vec2(uPlane / image, 1.0)
+      : vec2(1.0, image / uPlane);
+    return (uv - 0.5) * s + 0.5;
+  }
 
   void main() {
     vec2 uv = vUv;
@@ -46,7 +58,11 @@ const FRAGMENT = /* glsl */ `
     // Léger zoom à l'ouverture, pour que la vignette "arrive".
     uv = (uv - 0.5) * (1.0 + (1.0 - uOpen) * 0.3) + 0.5;
 
-    vec3 mixed = mix(texture2D(tCurrent, uv).rgb, texture2D(tNext, uv).rgb, uFade);
+    vec3 mixed = mix(
+      texture2D(tCurrent, cover(uv, uRatioA)).rgb,
+      texture2D(tNext, cover(uv, uRatioB)).rgb,
+      uFade
+    );
 
     // Noir et blanc assumé : luminance puis contraste tenu.
     float g = dot(mixed, vec3(0.299, 0.587, 0.114));
@@ -56,15 +72,22 @@ const FRAGMENT = /* glsl */ `
   }
 `;
 
-function loadTexture(gl: WebGLRenderingContext, url: string): Texture {
-  const texture = new Texture(gl, { generateMipmaps: false });
+interface Visual {
+  texture: Texture;
+  /** Largeur sur hauteur, connue seulement une fois l'image chargée. */
+  ratio: number;
+}
+
+function loadVisual(gl: WebGLRenderingContext, url: string): Visual {
+  const visual: Visual = { texture: new Texture(gl, { generateMipmaps: false }), ratio: 1 };
   const image = new Image();
   image.decoding = 'async';
   image.src = url;
   image.onload = () => {
-    texture.image = image;
+    visual.texture.image = image;
+    visual.ratio = image.naturalWidth / image.naturalHeight;
   };
-  return texture;
+  return visual;
 }
 
 export function initSubjectPreview() {
@@ -84,36 +107,40 @@ export function initSubjectPreview() {
   gl.canvas.classList.add('preview__canvas');
   root.appendChild(gl.canvas);
 
-  const size = () => {
-    const rect = root.getBoundingClientRect();
-    renderer.setSize(rect.width, rect.height);
-  };
-  size();
-  window.addEventListener('resize', size);
-
-  // Une texture par sujet, chargée une fois.
-  const textures = new Map<string, Texture>();
+  // Une texture par ligne, chargée une fois.
+  const visuals = new Map<string, Visual>();
   for (const link of links) {
     const src = link.dataset.previewSrc!;
-    if (!textures.has(src)) textures.set(src, loadTexture(gl, src));
+    if (!visuals.has(src)) visuals.set(src, loadVisual(gl, src));
   }
-  const first = textures.get(links[0].dataset.previewSrc!)!;
+  const first = visuals.get(links[0].dataset.previewSrc!)!;
 
   const program = new Program(gl, {
     vertex: VERTEX,
     fragment: FRAGMENT,
     transparent: true,
     uniforms: {
-      tCurrent: { value: first },
-      tNext: { value: first },
+      tCurrent: { value: first.texture },
+      tNext: { value: first.texture },
       uFade: { value: 0 },
       uVel: { value: 0 },
       uOpen: { value: 0 },
       uTime: { value: 0 },
+      uRatioA: { value: 1 },
+      uRatioB: { value: 1 },
+      uPlane: { value: 1 },
     },
   });
   const mesh = new Mesh(gl, { geometry: new Plane(gl, { width: 2, height: 2 }), program });
   const u = program.uniforms;
+
+  const size = () => {
+    const rect = root.getBoundingClientRect();
+    renderer.setSize(rect.width, rect.height);
+    u.uPlane.value = rect.width / rect.height;
+  };
+  size();
+  window.addEventListener('resize', size);
 
   // --- Suivi du curseur -------------------------------------------------
   // La vignette est centrée sur le curseur : GSAP compose ce décalage
@@ -141,9 +168,10 @@ export function initSubjectPreview() {
 
   const swapTo = (src: string) => {
     if (src === currentSrc) return;
-    const next = textures.get(src);
+    const next = visuals.get(src);
     if (!next) return;
-    u.tNext.value = next;
+    u.tNext.value = next.texture;
+    u.uRatioB.value = next.ratio;
     gsap.fromTo(
       u.uFade,
       { value: 0 },
@@ -152,7 +180,8 @@ export function initSubjectPreview() {
         duration: 0.45,
         ease: 'power2.inOut',
         onComplete: () => {
-          u.tCurrent.value = next;
+          u.tCurrent.value = next.texture;
+          u.uRatioA.value = next.ratio;
           u.uFade.value = 0;
           currentSrc = src;
         },
@@ -164,7 +193,9 @@ export function initSubjectPreview() {
     link.addEventListener('pointerenter', () => {
       const src = link.dataset.previewSrc!;
       if (u.uOpen.value < 0.05) {
-        u.tCurrent.value = textures.get(src)!;
+        const visual = visuals.get(src)!;
+        u.tCurrent.value = visual.texture;
+        u.uRatioA.value = visual.ratio;
         u.uFade.value = 0;
         currentSrc = src;
       } else {

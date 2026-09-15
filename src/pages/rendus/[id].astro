@@ -208,15 +208,15 @@ const next = siblings[(position + 1) % siblings.length];
 
     .project__cover {
       width: 100%;
-      /* `height: auto` est indispensable : sans lui, l'attribut height du
-         HTML l'emporte sur aspect-ratio et la couverture s'affiche presque
-         carrée, donc recadrée à outrance. */
+      /* Aucun format imposé : la couverture garde ses proportions, donc
+         une maquette n'est jamais rognée. `height: auto` est indispensable,
+         sans lui l'attribut height du HTML impose sa hauteur.
+         `contain` ne sert que de garde-fou si une couverture dépasse la
+         hauteur d'écran : elle se réduit au lieu d'être coupée. */
       height: auto;
-      aspect-ratio: 16 / 10;
-      max-height: 78svh;
-      object-fit: cover;
+      max-height: 85svh;
+      object-fit: contain;
       margin-top: clamp(2.5rem, 7vh, 4.5rem);
-      border: var(--rule) solid var(--line);
     }
 
     /* Le texte garde une longueur de ligne lisible (45 à 75 signes) et se

@@ -2,9 +2,15 @@
 title: Design Fiction
 year: 2026
 order: 1
-brief: Brief à compléter.
+brief: "Imaginer un changement assez profond pour transformer nos manières de vivre, puis prototyper les interfaces que cette nouvelle réalité rend nécessaires."
 cover: ../../assets/covers/design-fiction.png
-tags: []
+tags: [Prospective, Prototypage]
 ---
 
-Texte de présentation du sujet à écrire.
+Cinq jours, en groupe de deux à quatre. Chaque groupe invente un monde,
+identifie le besoin inédit qui en découle, l’incarne dans un scénario d’usage
+porté par un personnage, puis prototype les écrans que ce scénario réclame.
+
+La consigne écarte deux réflexes : la panique de contrôle et l’écran
+holographique bleu. Un futur peut être lent, étrange ou simplement différent,
+et un monde qui a ralenti se conçoit aussi bien qu’un monde de surveillance.

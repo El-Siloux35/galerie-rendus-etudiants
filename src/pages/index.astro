@@ -19,12 +19,15 @@ const pick = (list: typeof projects) => list.find((p) => p.data.featured) ?? lis
 // --- Par sujet ---------------------------------------------------------
 const subjectRows = await Promise.all(
   subjects.map(async (subject) => {
-    const count = projects.filter((p) => p.data.subject.id === subject.id).length;
+    const list = projects.filter((p) => p.data.subject.id === subject.id);
+    const count = list.length;
     return {
       href: `/sujets/${subject.id}`,
       label: subject.data.title,
       meta: `${subject.data.year} · ${count} ${count > 1 ? 'rendus' : 'rendu'}`,
-      preview: await preview(subject.data.cover),
+      // La vignette montre un vrai rendu du sujet. L'image du sujet ne sert
+      // que tant qu'aucun travail n'a été publié dessus.
+      preview: await preview(pick(list)?.data.cover ?? subject.data.cover),
     };
   }),
 );
@@ -132,8 +135,8 @@ const period =
       top: 0;
       left: 0;
       z-index: 20;
-      width: clamp(190px, 17vw, 290px);
-      aspect-ratio: 3 / 4;
+      width: clamp(210px, 19vw, 330px);
+      aspect-ratio: 3 / 2;
       pointer-events: none;
       will-change: transform;
     }
