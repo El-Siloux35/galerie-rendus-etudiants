@@ -68,16 +68,20 @@ const projects = (await getCollection('projects', ({ data }) => !data.draft))
     }
 
     .subject__brief {
-      max-width: 26ch;
+      max-width: 42ch;
       font-size: var(--step-2);
       line-height: 1.3;
       letter-spacing: -0.02em;
       text-wrap: pretty;
     }
 
+    /* Le texte occupe plus de largeur en grossissant, pas en allongeant
+       ses lignes : la mesure reste sous 75 signes. */
     .prose {
-      max-width: 62ch;
-      margin-top: 1.8rem;
+      max-width: 54ch;
+      margin-top: 2rem;
+      font-size: var(--step-1);
+      line-height: 1.5;
       color: var(--muted);
       text-wrap: pretty;
     }
