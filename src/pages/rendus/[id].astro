@@ -138,8 +138,10 @@ const next = siblings[(position + 1) % siblings.length];
 
     .project__cover {
       width: 100%;
-      /* La source est au format portrait : on recadre pour que la
-         couverture n'occupe pas deux écrans de haut. */
+      /* `height: auto` est indispensable : sans lui, l'attribut height du
+         HTML l'emporte sur aspect-ratio et la couverture s'affiche presque
+         carrée, donc recadrée à outrance. */
+      height: auto;
       aspect-ratio: 16 / 10;
       max-height: 78svh;
       object-fit: cover;
