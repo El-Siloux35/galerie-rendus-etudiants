@@ -102,7 +102,6 @@ const period =
             {list.rows.map((row, j) => (
               <li data-reveal data-reveal-delay={String(0.04 * j)}>
                 <a href={row.href} data-preview-src={row.preview}>
-                  <span class="row__index mono">{String(j + 1).padStart(2, '0')}</span>
                   <span class="row__title">{row.label}</span>
                   <span class="row__meta mono">{row.meta}</span>
                   <span class="row__arrow" aria-hidden="true">
@@ -145,10 +144,6 @@ const period =
 
     .hero {
       padding-block: clamp(3rem, 10vh, 6.5rem) clamp(2rem, 6vh, 3.5rem);
-    }
-
-    .hero > * {
-      margin-left: var(--row-indent);
     }
 
     .hero__title {
@@ -209,7 +204,7 @@ const period =
       position: relative;
       isolation: isolate;
       display: grid;
-      grid-template-columns: auto 1fr auto auto;
+      grid-template-columns: 1fr auto auto;
       align-items: center;
       gap: clamp(0.9rem, 3.5vw, 3rem);
       padding-block: clamp(1rem, 2.4vw, 1.9rem);
@@ -231,12 +226,6 @@ const period =
     .subjects a:hover::before,
     .subjects a:focus-visible::before {
       transform: scaleX(1);
-    }
-
-    .row__index {
-      color: var(--faint);
-      align-self: start;
-      padding-top: 0.55em;
     }
 
     .row__title {
@@ -291,11 +280,8 @@ const period =
 
     @media (max-width: 44rem) {
       .subjects a {
-        grid-template-columns: auto 1fr;
+        grid-template-columns: 1fr;
         row-gap: 0.35rem;
-      }
-      .row__meta {
-        grid-column: 2;
       }
       .row__arrow {
         display: none;

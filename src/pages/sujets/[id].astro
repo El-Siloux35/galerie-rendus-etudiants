@@ -21,7 +21,7 @@ const projects = (await getCollection('projects', ({ data }) => !data.draft))
   <article class="subject shell">
     <header class="subject__head">
       <p class="mono" data-reveal>
-        <a href="/">Sujets</a> → {subject.data.year}
+        <a href="/">Accueil</a> <span aria-hidden="true">/</span> {subject.data.title}
       </p>
       <h1 class="subject__title" data-reveal data-reveal-delay="0.06">{subject.data.title}</h1>
       <p class="subject__brief" data-reveal data-reveal-delay="0.12">{subject.data.brief}</p>

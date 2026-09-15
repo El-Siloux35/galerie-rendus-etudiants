@@ -28,9 +28,11 @@ const next = siblings[(position + 1) % siblings.length];
 >
   <article class="project shell">
     <header class="project__head">
-      <p class="mono" data-reveal>
-        <a href="/">Sujets</a> → <a href={`/sujets/${subject!.id}`}>{subject!.data.title}</a> →{' '}
-        {project.data.year}
+      <!-- Un rendu se classe par sujet, par niveau et par année : trois
+           entrées parallèles, pas une hiérarchie. Le chemin reste donc à un
+           seul niveau, et le classement passe par les étiquettes ci-dessous. -->
+      <p class="mono crumb" data-reveal>
+        <a href="/">Accueil</a> <span aria-hidden="true">/</span> {project.data.title}
       </p>
       <h1 class="project__title" data-reveal data-reveal-delay="0.06">{project.data.title}</h1>
 
@@ -49,8 +51,27 @@ const next = siblings[(position + 1) % siblings.length];
             ))
           }
         </ul>
-        <p class="mono credits__class">{project.data.class}</p>
+        {
+          /* La classe n'est répétée que si elle est plus précise que le
+             niveau, que porte déjà l'étiquette : « G4A » s'affiche, « G4 » non. */
+          project.data.class !== project.data.level && (
+            <p class="mono credits__class">{project.data.class}</p>
+          )
+        }
       </div>
+      <ul class="tags" data-reveal data-reveal-delay="0.18">
+        <li>
+          <a href={`/sujets/${subject!.id}`}>{subject!.data.title}</a>
+        </li>
+        <li>
+          <a href={`/niveaux/${project.data.level}`}>{project.data.level}</a>
+        </li>
+        <li>
+          <a href={`/annees/${project.data.year}`}>
+            {project.data.year}-{project.data.year + 1}
+          </a>
+        </li>
+      </ul>
     </header>
 
     <Image
@@ -134,6 +155,39 @@ const next = siblings[(position + 1) % siblings.length];
     }
     .credits__class {
       margin-top: 0.35rem;
+    }
+
+    /* Étiquettes de classement. Ce sont des liens : chacune mène à l'index
+       correspondant, ce que l'ancien fil d'Ariane ne permettait que pour
+       le sujet. */
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .tags a {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: var(--step--1);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border: var(--rule) solid var(--line);
+      border-radius: 999px;
+      padding: 0.5rem 1rem;
+      transition:
+        color 0.3s var(--ease),
+        border-color 0.3s var(--ease),
+        background-color 0.3s var(--ease);
+    }
+
+    .tags a:hover,
+    .tags a:focus-visible {
+      color: var(--paper);
+      background: var(--ink);
+      border-color: var(--ink);
     }
 
     .project__cover {

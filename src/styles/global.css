@@ -25,9 +25,6 @@
   --step-4: clamp(2.75rem, 1.2rem + 7.2vw, 7.5rem);
   --step-5: clamp(3rem, 0.4rem + 10vw, 9.5rem);
 
-  /* Largeur de la colonne des numéros sur l'accueil. Le titre s'aligne
-     dessus, ce qui met tout le héros à l'aplomb des titres de sujets. */
-  --row-indent: calc(1.15rem + clamp(0.9rem, 3.5vw, 3rem));
 
   --gutter: clamp(1.125rem, 0.6rem + 2.4vw, 3rem);
   --rule: 1px;
