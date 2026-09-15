@@ -3,7 +3,7 @@ title: HONY
 subject: design-fiction
 year: 2026
 featured: true
-class: G4A
+class: G4
 students: [Ysé, Mickael, Jade, Clémence]
 cover: ../../assets/covers/hony.png
 coverAlt: Interface HONY en réalité augmentée, vue depuis un lit au réveil

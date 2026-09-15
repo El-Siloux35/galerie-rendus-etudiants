@@ -128,7 +128,7 @@ const next = siblings[(position + 1) % siblings.length];
       padding-block: clamp(3rem, 10vh, 6rem) 0;
     }
 
-    .project__head a {
+    .crumb a {
       text-decoration: underline;
       text-underline-offset: 0.25em;
     }
@@ -167,40 +167,35 @@ const next = siblings[(position + 1) % siblings.length];
 
     /* Étiquettes de classement. Ce sont des liens : chacune mène à l'index
        correspondant, ce que l'ancien fil d'Ariane ne permettait que pour
-       le sujet. Sans cadre ni aplat : le seul aplat plein du site reste le
-       filtre actif de l'accueil. */
+       le sujet. */
     .tags {
       display: flex;
       flex-wrap: wrap;
-      column-gap: 0.75rem;
-      row-gap: 0.2rem;
-      margin-top: 0.9rem;
-    }
-
-    .tags li:not(:last-child)::after {
-      content: '·';
-      margin-left: 0.75rem;
-      color: var(--faint);
+      gap: 0.5rem;
+      margin-top: 1.2rem;
     }
 
     .tags a {
+      display: block;
       font-family: var(--font-mono);
       font-size: var(--step--1);
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--muted);
-      text-decoration-line: underline;
-      text-decoration-color: transparent;
-      text-underline-offset: 0.35em;
+      border: var(--rule) solid var(--line);
+      border-radius: 999px;
+      padding: 0.5rem 1rem;
       transition:
         color 0.3s var(--ease),
-        text-decoration-color 0.3s var(--ease);
+        border-color 0.3s var(--ease),
+        background-color 0.3s var(--ease);
     }
 
     .tags a:hover,
     .tags a:focus-visible {
-      color: var(--ink);
-      text-decoration-color: currentColor;
+      color: var(--paper);
+      background: var(--ink);
+      border-color: var(--ink);
     }
 
     .project__cover {
