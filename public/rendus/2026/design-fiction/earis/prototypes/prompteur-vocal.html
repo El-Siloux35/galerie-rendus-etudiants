@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prompteur vocal</title>
+<style>
+  :root{
+    --violet: #7E38DF;
+    --bg: #060608;
+    --line-height-ratio: 1.3;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+
+  #app {
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  /* Zone de scène : hauteur fixée dynamiquement à 2 lignes, tout le reste est masqué */
+  #stage {
+    width: 92vw;
+    max-width: 1300px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: flex-end; /* le texte "monte" depuis le bas comme un prompteur */
+  }
+
+  #textInner {
+    width: 100%;
+    text-align: center;
+    color: var(--violet);
+    font-weight: 700;
+    font-size: clamp(2.2rem, 6vw, 5.2rem);
+    line-height: var(--line-height-ratio);
+    letter-spacing: 0.5px;
+    text-shadow:
+      0 0 10px rgba(126, 56, 223, 0.55),
+      0 0 28px rgba(126, 56, 223, 0.25);
+    transform: translateY(0px);
+    transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+    word-wrap: break-word;
+  }
+
+  .word {
+    display: inline-block;
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.28s ease, transform 0.28s ease;
+    white-space: pre;
+  }
+
+  .word.entering {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  .word.interim {
+    opacity: 0.5;
+  }
+
+  /* Bouton */
+  #toggleBtn {
+    position: fixed;
+    bottom: 48px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 14px 34px;
+    background: transparent;
+    border: 1.5px solid rgba(126, 56, 223, 0.55);
+    color: var(--violet);
+    border-radius: 999px;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    outline: none;
+    backdrop-filter: blur(6px);
+  }
+
+  #toggleBtn:hover {
+    border-color: var(--violet);
+    box-shadow: 0 0 18px rgba(126, 56, 223, 0.35);
+  }
+
+  #toggleBtn.active {
+    background: rgba(126, 56, 223, 0.12);
+    border-color: var(--violet);
+    animation: pulseGlow 1.8s ease-in-out infinite;
+  }
+
+  #toggleBtn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  @keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 10px rgba(126, 56, 223, 0.25); }
+    50% { box-shadow: 0 0 26px rgba(126, 56, 223, 0.55); }
+  }
+
+  #status {
+    position: fixed;
+    bottom: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 0.78rem;
+    text-align: center;
+    max-width: 80vw;
+    letter-spacing: 0.2px;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="stage">
+    <div id="textInner"><span id="interimContainer"></span></div>
+  </div>
+  <button id="toggleBtn">🎙 Démarrer</button>
+  <div id="status"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ------------------------------------------------------------------
+  // Configuration facilement modifiable
+  // ------------------------------------------------------------------
+  const LANG = "fr-FR";           // Langue de reconnaissance vocale
+  const MAX_LINES = 2;            // Nombre maximum de lignes affichées
+  const LINE_HEIGHT_RATIO = 1.3;  // Doit correspondre à --line-height-ratio en CSS
+
+  // ------------------------------------------------------------------
+  // Références DOM
+  // ------------------------------------------------------------------
+  const stage = document.getElementById("stage");
+  const textInner = document.getElementById("textInner");
+  const interimContainer = document.getElementById("interimContainer");
+  const btn = document.getElementById("toggleBtn");
+  const statusEl = document.getElementById("status");
+
+  let lineHeight = 0;
+  let stageHeight = 0;
+
+  // ------------------------------------------------------------------
+  // Mesure de la hauteur d'une ligne / de la scène
+  // ------------------------------------------------------------------
+  function measure() {
+    const fontSize = parseFloat(getComputedStyle(textInner).fontSize);
+    lineHeight = fontSize * LINE_HEIGHT_RATIO;
+    stageHeight = lineHeight * MAX_LINES;
+    stage.style.height = stageHeight + "px";
+  }
+
+  function debounce(fn, ms) {
+    let t;
+    return (...args) => {
+      clearTimeout(t);
+      t = setTimeout(() => fn(...args), ms);
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // Gestion du défilement fluide (effet prompteur)
+  // ------------------------------------------------------------------
+  function currentTranslateY(el) {
+    const transform = getComputedStyle(el).transform;
+    if (transform === "none") return 0;
+    const matrix = new DOMMatrixReadOnly(transform);
+    return matrix.m42;
+  }
+
+  function updateScroll(animate) {
+    const overflow = textInner.scrollHeight - stageHeight;
+    const target = overflow > 0 ? -overflow : 0;
+    if (animate === false) {
+      textInner.style.transition = "none";
+      textInner.style.transform = "translateY(" + target + "px)";
+      void textInner.offsetHeight; // force reflow
+      textInner.style.transition = "";
+    } else {
+      textInner.style.transform = "translateY(" + target + "px)";
+    }
+  }
+
+  // Supprime du DOM les mots dont la ligne est déjà sortie de la scène,
+  // en compensant instantanément le décalage pour éviter tout saut visuel.
+  function cleanupOldWords() {
+    const stageTop = stage.getBoundingClientRect().top;
+    let safety = 0;
+
+    while (textInner.children.length > 1 && safety < 300) {
+      safety++;
+      const first = textInner.children[0];
+      if (first === interimContainer) break;
+
+      const rect = first.getBoundingClientRect();
+      if (rect.bottom <= stageTop + 0.5) {
+        const beforeHeight = textInner.scrollHeight;
+        first.remove();
+        const afterHeight = textInner.scrollHeight;
+        const diff = beforeHeight - afterHeight;
+
+        if (diff > 0) {
+          const cur = currentTranslateY(textInner);
+          textInner.style.transition = "none";
+          textInner.style.transform = "translateY(" + (cur + diff) + "px)";
+          void textInner.offsetHeight;
+          textInner.style.transition = "";
+        }
+      } else {
+        break;
+      }
+    }
+  }
+
+  textInner.addEventListener("transitionend", (e) => {
+    if (e.propertyName === "transform") {
+      cleanupOldWords();
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // Construction du texte : mots définitifs (final) + mot(s) intermédiaire(s)
+  // ------------------------------------------------------------------
+  function appendFinalWords(text) {
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    words.forEach((w) => {
+      const span = document.createElement("span");
+      span.className = "word final entering";
+      span.textContent = w + " ";
+      textInner.insertBefore(span, interimContainer);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => span.classList.remove("entering"));
+      });
+    });
+  }
+
+  function setInterimWords(text) {
+    interimContainer.innerHTML = "";
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    words.forEach((w, i) => {
+      const span = document.createElement("span");
+      span.className = "word interim";
+      span.textContent = w + (i < words.length - 1 ? " " : " ");
+      interimContainer.appendChild(span);
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Reconnaissance vocale (API native du navigateur)
+  // ------------------------------------------------------------------
+  const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  let listening = false;
+  let manualStop = true;
+
+  function setButtonState() {
+    if (listening) {
+      btn.textContent = "⏹ Arrêter";
+      btn.classList.add("active");
+    } else {
+      btn.textContent = "🎙 Démarrer";
+      btn.classList.remove("active");
+    }
+  }
+
+  if (!SpeechRecognitionImpl) {
+    statusEl.textContent = "La reconnaissance vocale n'est pas supportée par ce navigateur. Essayez Chrome ou Edge.";
+    btn.disabled = true;
+  } else {
+    recognition = new SpeechRecognitionImpl();
+    recognition.lang = LANG;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event) => {
+      let interimText = "";
+      let finalText = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = result[0].transcript;
+        if (result.isFinal) {
+          finalText += transcript + " ";
+        } else {
+          interimText += transcript;
+        }
+      }
+
+      if (finalText) {
+        appendFinalWords(finalText);
+      }
+      setInterimWords(interimText);
+      updateScroll(true);
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        statusEl.textContent = "Accès au microphone refusé. Autorisez le micro pour utiliser le prompteur.";
+        manualStop = true;
+        listening = false;
+        setButtonState();
+      } else if (event.error === "no-speech" || event.error === "aborted") {
+        // silence temporaire : ignoré, le onend gère le redémarrage
+      } else {
+        statusEl.textContent = "Erreur de reconnaissance vocale : " + event.error;
+      }
+    };
+
+    recognition.onend = () => {
+      listening = false;
+      if (!manualStop) {
+        // Chrome interrompt périodiquement la session : on relance automatiquement
+        try {
+          recognition.start();
+          listening = true;
+        } catch (e) {
+          /* déjà démarré ou erreur transitoire, ignoré */
+        }
+      }
+      setButtonState();
+    };
+  }
+
+  btn.addEventListener("click", () => {
+    if (!recognition) return;
+
+    if (listening) {
+      manualStop = true;
+      recognition.stop();
+      listening = false;
+      setButtonState();
+    } else {
+      manualStop = false;
+      statusEl.textContent = "";
+      try {
+        recognition.start();
+        listening = true;
+        setButtonState();
+      } catch (e) {
+        statusEl.textContent = "Impossible de démarrer la reconnaissance : " + e.message;
+      }
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // Initialisation
+  // ------------------------------------------------------------------
+  measure();
+  window.addEventListener("resize", debounce(() => {
+    measure();
+    updateScroll(false);
+    cleanupOldWords();
+  }, 200));
+})();
+</script>
+
+</body>
+</html>

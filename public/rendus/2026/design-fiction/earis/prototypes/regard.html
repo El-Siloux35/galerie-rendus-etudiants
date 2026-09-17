@@ -1,0 +1,2125 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Regard — interface vocale sur fond caméra</title>
+
+<style>
+/* ============================================================
+   RESET & BASE
+   ============================================================ */
+:root{
+  --bg: #B3B3B3;
+  --surface: #F7F7F7;
+  --surface-strong: #FFFFFF;
+  --violet: #8748E5;
+  --violet-bright: #A97BFF;
+  --violet-deep: #5B2FB8;
+  --magenta: #FF2F87;
+  --text-on-dark: #FFFFFF;
+  --text-on-light: #3B2A63;
+  --ring-track: rgba(255,255,255,0.35);
+  --transition-slow: 900ms cubic-bezier(.19,1,.22,1);
+  --transition-med: 480ms cubic-bezier(.19,1,.22,1);
+  --transition-fast: 220ms ease;
+  --line-height-ratio: 1.25; /* doit correspondre à LINE_HEIGHT_RATIO en JS (prompteur) */
+}
+
+*{ box-sizing: border-box; }
+
+html, body{
+  margin:0; padding:0; height:100%; width:100%;
+  overflow:hidden; /* pas de scroll : c'est une scène plein écran */
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(255,255,255,0.35), transparent 60%),
+    var(--bg);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button{ font-family: inherit; }
+
+/* Respect du mode "mouvement réduit" : on raccourcit / supprime les animations */
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+html.reduced-motion *{
+  animation-duration: .001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .001ms !important;
+}
+
+/* ============================================================
+   SCÈNE PRINCIPALE
+   ------------------------------------------------------------
+   .stage reste transparente : le dégradé gris de repli vit sur
+   html/body (dessous de tout), et .bg-video (juste au-dessus) le
+   recouvre entièrement dès que la caméra est active. Si .stage avait
+   son propre fond opaque, elle masquerait la caméra malgré son
+   z-index plus bas, car elle est plus tardive dans le DOM.
+   ============================================================ */
+.stage{
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
+
+/* Retour caméra en direct, plein écran, en fond de scène. Jamais envoyé
+   nulle part : la vidéo reste 100% locale, uniquement affichée à l'écran.
+   Mise en miroir (scaleX(-1)) pour un rendu naturel de "webcam selfie". */
+.bg-video{
+  position: fixed;
+  inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  opacity: 0;
+  transition: opacity 900ms ease;
+  z-index: 0;
+  background: #000;
+}
+.bg-video.is-active{ opacity: 1; }
+
+/* Voile sombre au-dessus de la caméra pour garder les textes/icônes lisibles,
+   quelle que soit la luminosité de la pièce filmée. */
+.bg-scrim{
+  position: fixed; inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(20,14,32,0.16) 0%, rgba(20,14,32,0.04) 30%, rgba(20,14,32,0.04) 70%, rgba(20,14,32,0.22) 100%);
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+.bg-scrim.is-active{ opacity: 1; }
+
+/* Éléments qui apparaissent / disparaissent selon l'attention détectée */
+.fades-with-attention{
+  transition:
+    opacity var(--transition-slow),
+    transform var(--transition-slow),
+    filter var(--transition-slow);
+  will-change: opacity, transform, filter;
+}
+
+/* État "l'utilisateur ne regarde pas l'écran" : disparition douce, jamais brutale */
+.stage[data-attentive="false"] .fades-with-attention{
+  opacity: 0;
+  transform: translateY(10px) scale(0.965);
+  filter: blur(6px);
+  pointer-events: none;
+}
+.stage[data-attentive="true"] .fades-with-attention{
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+  pointer-events: auto;
+}
+
+/* ============================================================
+   PANNEAU VITRÉ — carte translucide qui regroupe toute l'interface,
+   posée par-dessus le retour caméra (inspirée de la photo de référence).
+   Tous les widgets qu'elle contient passent de position:fixed (pleine
+   fenêtre) à position:absolute (relatif à ce panneau) ; comme toute la
+   logique d'interaction (dwell-click, curseur) travaille en coordonnées
+   écran via getBoundingClientRect(), ce changement est purement visuel.
+   ============================================================ */
+.panel{
+  position: absolute;
+  inset: 7vh 4vw;
+  z-index: 5;
+  border-radius: 40px;
+  background: linear-gradient(160deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
+  border: 1px solid rgba(255,255,255,0.24);
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  box-shadow: 0 40px 100px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.25);
+  transition: opacity var(--transition-slow), transform var(--transition-slow);
+}
+
+/* ============================================================
+   PILL "Nouvelle interaction" (haut gauche du panneau)
+   ============================================================ */
+.pill-new{
+  position: absolute; top: 28px; left: 28px;
+  z-index: 20;
+  display:inline-flex; align-items:center; gap:8px;
+  background: rgba(255,255,255,0.26);
+  backdrop-filter: blur(7px) saturate(140%);
+  -webkit-backdrop-filter: blur(7px) saturate(140%);
+  color: var(--violet);
+  border: 1px solid rgba(255,255,255,0.32);
+  border-radius: 999px;
+  padding: 14px 26px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+}
+.pill-new:hover{ background: rgba(255,255,255,0.38); }
+.pill-new:focus-visible{ outline: 3px solid var(--violet-bright); outline-offset: 3px; }
+.pill-new.is-focused{
+  transform: scale(1.04);
+  box-shadow: 0 10px 30px rgba(135,72,229,0.35), 0 0 0 4px rgba(135,72,229,0.15);
+}
+.pill-new.is-selected{ animation: pulse-once 600ms ease; }
+
+/* ============================================================
+   BOUTON "•••" (haut droite du panneau) — menu / réglages
+   ============================================================ */
+.menu-btn{
+  position: absolute; top: 28px; right: 28px;
+  z-index: 30;
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.32);
+  background: rgba(255,255,255,0.26);
+  backdrop-filter: blur(7px) saturate(140%);
+  -webkit-backdrop-filter: blur(7px) saturate(140%);
+  color: var(--violet);
+  font-size: 20px; font-weight: 700; letter-spacing: 2px;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  transition: transform var(--transition-fast);
+}
+.menu-btn:hover{ transform: scale(1.05); }
+.menu-btn:focus-visible{ outline: 3px solid var(--violet-bright); outline-offset: 3px; }
+
+/* ============================================================
+   ORBE VIOLET — élément central interactif
+   ============================================================ */
+.orb-wrap{
+  position: absolute;
+  left: 9%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: clamp(190px, 24vw, 340px);
+  height: clamp(190px, 24vw, 340px);
+  z-index: 10;
+  display:flex; align-items:center; justify-content:center;
+}
+.orb{
+  position:relative;
+  width: 78%; height: 78%;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  background: none;
+  display:block;
+  transition: transform var(--transition-med);
+}
+.orb:focus-visible{ outline: 3px solid var(--violet-bright); outline-offset: 10px; }
+
+/* L'orbe est dessiné image par image sur un <canvas> (voir JS section
+   "ORBE RÉACTIF À LA VOIX"), qui reproduit la forme organique de la démo
+   "reconnaissance vocale décibels" : son volume/hauteur/timbre pilotent la taille,
+   la vitesse d'ondulation et la complexité du contour. Le canvas est volontairement
+   plus grand que le bouton (190%) et centré dessus, pour laisser de la place aux
+   halos flous sans les rogner ; il ignore les clics (pointer-events:none) pour que
+   la souris continue de cibler le vrai bouton .orb en dessous. */
+.orb-canvas{
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 190%; height: 190%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* Quand la cible est fixée : léger agrandissement du bouton (donc du canvas
+   qu'il contient). L'augmentation du glow lui-même est gérée dans le rendu canvas
+   (voir focusBoost dans orbLoop). */
+.orb.is-focused{ transform: scale(1.06); }
+.orb.is-selected{ animation: pulse-once 700ms ease; }
+
+@keyframes pulse-once{
+  0%{ transform: scale(1); }
+  35%{ transform: scale(1.12); }
+  100%{ transform: scale(1); }
+}
+
+/* ============================================================
+   MESSAGE (bas gauche du panneau) — "prompteur" vocal en direct
+   ------------------------------------------------------------
+   Repris du fichier de référence "prompteur vocal" : la reconnaissance
+   vocale du navigateur (Web Speech API) alimente ce bloc mot par mot.
+   #messageStage a une hauteur fixée en JS à exactement 2 lignes de texte
+   et masque le débordement (overflow:hidden) ; #messageInner grandit avec
+   le texte et se translate vers le haut pour faire défiler les anciennes
+   lignes hors champ, comme un vrai prompteur.
+   ============================================================ */
+.message-wrap{
+  position: absolute;
+  left: 40px; bottom: 40px;
+  z-index: 10;
+  max-width: min(56vw, 640px);
+}
+.message-stage{
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: flex-end; /* le texte "monte" depuis le bas, comme un prompteur */
+}
+.message-inner{
+  width: 100%;
+  color: var(--text-on-dark);
+  font-size: clamp(22px, 3vw, 38px);
+  line-height: var(--line-height-ratio);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-shadow: 0 2px 24px rgba(0,0,0,0.35);
+  transform: translateY(0px);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+  word-wrap: break-word;
+}
+.word{
+  display: inline-block;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.28s ease, transform 0.28s ease;
+  white-space: pre;
+}
+.word.entering{ opacity: 0; transform: translateY(10px); }
+.word.interim{ opacity: 0.5; }
+
+/* ============================================================
+   HUD MINUTEURS — pastilles créées par commande vocale
+   ------------------------------------------------------------
+   Apparaît uniquement pendant qu'au moins un minuteur existe (créé en
+   disant par ex. « lance un minuteur de 5 minutes ») et disparaît
+   automatiquement dès qu'il n'y en a plus (voir updateTimerHudVisibility
+   en JS). Suit aussi l'attention comme le reste de l'interface.
+   ============================================================ */
+.timer-hud{
+  position: absolute;
+  top: 28px; left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  z-index: 25;
+  display:flex; flex-direction:column; align-items:center; gap: 10px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-med), transform var(--transition-med);
+}
+.timer-hud.is-visible{
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.timer-pill{
+  display:flex; align-items:center; gap: 12px;
+  background: rgba(255,255,255,0.26);
+  backdrop-filter: blur(7px) saturate(140%);
+  -webkit-backdrop-filter: blur(7px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.32);
+  border-radius: 999px;
+  padding: 10px 20px 10px 16px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  color: var(--text-on-light);
+  animation: timer-pill-in var(--transition-fast) ease;
+}
+.timer-pill.leaving{ animation: timer-pill-out .26s ease forwards; }
+@keyframes timer-pill-in{ from{ opacity:0; transform: translateY(-6px) scale(.96); } to{ opacity:1; transform: translateY(0) scale(1); } }
+@keyframes timer-pill-out{ to{ opacity:0; transform: translateY(-6px) scale(.94); } }
+.timer-dot{ width:8px; height:8px; border-radius:50%; background: var(--violet); flex-shrink:0; }
+.timer-pill.paused .timer-dot{ background:#b7aecb; }
+.timer-pill.finished .timer-dot{ background: var(--magenta); box-shadow: 0 0 0 3px rgba(255,47,135,0.25); }
+.timer-name{ font-size: 12.5px; color: #6b6280; max-width: 140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.timer-name:empty{ display:none; }
+.timer-time{
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+  color: var(--text-on-light);
+}
+.timer-bar{ width: 46px; height: 3px; border-radius: 3px; background: rgba(135,72,229,0.15); overflow:hidden; }
+.timer-bar-fill{ height:100%; width:0%; background: var(--violet); border-radius:3px; transition: width .3s linear; }
+.timer-pill.finished .timer-bar-fill{ background: var(--magenta); }
+
+/* ============================================================
+   GROUPE "DOCK + BOUTON MAIN" (droite du panneau)
+   ------------------------------------------------------------
+   Le dock et le bouton main sont regroupés dans un conteneur flex
+   commun (.dock-cluster) plutôt que positionnés indépendamment avec des
+   décalages en pixels codés en dur : ainsi le bouton main se retrouve
+   TOUJOURS juste sous le dock, avec un espace constant, quelle que soit
+   la hauteur réelle du panneau — corrige un chevauchement possible
+   entre le bouton main et la dernière icône du dock.
+   ============================================================ */
+.dock-cluster{
+  position: absolute;
+  right: 28px; top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  display:flex; flex-direction:column; align-items:center; gap: 22px;
+}
+
+/* DOCK D'ÉMOTIONS — barre pilule verticale */
+.dock{
+  /* Espacement volontairement généreux : ça facilite la sélection au
+     dwell-click (souris) entre pictos rapprochés — voir targetSwitchMargin. */
+  display:flex; flex-direction:column; gap: 24px;
+  background: rgba(255,255,255,0.26);
+  backdrop-filter: blur(7px) saturate(140%);
+  -webkit-backdrop-filter: blur(7px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.32);
+  border-radius: 999px;
+  padding: 20px 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.16);
+}
+.dock__btn{
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--violet);
+  display:flex; align-items:center; justify-content:center;
+  cursor: pointer;
+  transition: transform var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+.dock__btn svg{ width: 24px; height: 24px; display:block; }
+.dock__btn:hover{ background: rgba(135,72,229,0.08); }
+.dock__btn:focus-visible{ outline: 3px solid var(--violet-bright); outline-offset: 2px; }
+.dock__btn.is-focused{
+  transform: translateY(-4px) scale(1.08);
+  background: rgba(135,72,229,0.10);
+  box-shadow: 0 8px 20px rgba(135,72,229,0.30);
+}
+.dock__btn.is-selected{
+  color: var(--magenta);
+  animation: pulse-once 600ms ease;
+}
+
+/* ============================================================
+   BOUTON MAIN (sous le dock, dans .dock-cluster)
+   ============================================================ */
+.hand-btn{
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.32);
+  backdrop-filter: blur(7px) saturate(140%);
+  -webkit-backdrop-filter: blur(7px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.35);
+  color: var(--violet);
+  display:flex; align-items:center; justify-content:center;
+  cursor: pointer;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.12);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.hand-btn svg{ width: 24px; height: 24px; }
+.hand-btn:focus-visible{ outline: 3px solid var(--violet-bright); outline-offset: 3px; }
+.hand-btn.is-focused{ transform: scale(1.08); box-shadow: 0 10px 30px rgba(135,72,229,0.35); }
+.hand-btn.is-selected{ animation: pulse-once 600ms ease; }
+
+/* ============================================================
+   ANNEAU DE PROGRESSION DU "DWELL CLICK"
+   Un seul anneau réutilisé, repositionné sur l'élément fixé par le curseur.
+   Reste position:fixed en dehors du panneau : getBoundingClientRect() donne
+   des coordonnées écran, donc son positionnement est inchangé par la
+   restructuration du panneau.
+   ============================================================ */
+.dwell-ring{
+  position: fixed;
+  left:0; top:0;
+  width: 60px; height: 60px;
+  pointer-events: none;
+  z-index: 40;
+  opacity: 0;
+  transform: translate(-50%,-50%) scale(0.85);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+.dwell-ring.is-active{ opacity: 1; transform: translate(-50%,-50%) scale(1); }
+.dwell-ring svg{ width:100%; height:100%; transform: rotate(-90deg); }
+.dwell-ring circle{ fill:none; }
+.dwell-ring .ring-bg{ stroke: rgba(135,72,229,0.18); stroke-width: 6; }
+.dwell-ring .ring-fg{
+  stroke: var(--magenta);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-dasharray: 283;
+  stroke-dashoffset: 283;
+  transition: stroke-dashoffset 80ms linear;
+}
+
+/* ============================================================
+   RETOUR CENTRAL (feedback de sélection)
+   ============================================================ */
+.center-feedback{
+  position: fixed;
+  left:50%; top:50%;
+  transform: translate(-50%,-50%) scale(0.9);
+  z-index: 50;
+  background: rgba(255,255,255,0.9);
+  color: var(--text-on-light);
+  padding: 18px 30px;
+  border-radius: 22px;
+  font-size: 22px;
+  font-weight: 600;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition-med), transform var(--transition-med);
+}
+.center-feedback.is-visible{ opacity: 1; transform: translate(-50%,-50%) scale(1); }
+
+/* ============================================================
+   CURSEUR — petit point violet qui suit la souris. Toujours visible
+   (sauf désactivation dans les réglages), puisque la souris est
+   désormais le seul mode d'interaction ("clic par le regard" retiré).
+   ============================================================ */
+.gaze-dot{
+  position: fixed; left:0; top:0;
+  width: 20px; height: 20px;
+  margin-left: -10px; margin-top: -10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(169,123,255,0.85) 35%, rgba(135,72,229,0.15) 70%, transparent 78%);
+  box-shadow: 0 0 24px rgba(135,72,229,0.55);
+  z-index: 999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 260ms ease, transform 90ms linear;
+}
+.gaze-dot.is-visible{ opacity: 0.9; }
+.gaze-dot.is-debug-detail{
+  /* En mode debug, on rend le curseur légèrement plus marqué (utile pour lire précisément) */
+  box-shadow: 0 0 24px rgba(135,72,229,0.85);
+}
+.debug-panel{
+  position: fixed; left: 28px; bottom: 28px;
+  z-index: 999;
+  background: rgba(20,14,32,0.82);
+  color: #fff;
+  font: 12px/1.5 ui-monospace, monospace;
+  padding: 12px 16px;
+  border-radius: 12px;
+  display:none;
+  white-space: pre;
+}
+
+/* ============================================================
+   OVERLAYS : démarrage / réglages
+   ============================================================ */
+.overlay{
+  position: fixed; inset:0;
+  z-index: 200;
+  display:flex; align-items:center; justify-content:center;
+  background: rgba(60,55,70,0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: opacity var(--transition-med);
+}
+.overlay[hidden]{ display:none; }
+.overlay-card{
+  background: var(--surface);
+  border-radius: 28px;
+  padding: 44px 40px;
+  max-width: 460px;
+  width: calc(100% - 48px);
+  text-align:center;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.30);
+}
+.overlay-card h1{
+  font-size: 24px; margin: 0 0 12px; color: var(--text-on-light);
+}
+.overlay-card p{
+  font-size: 15px; color: #6b6280; line-height:1.6; margin: 0 0 24px;
+}
+.btn-primary, .btn-secondary{
+  display:inline-flex; align-items:center; justify-content:center;
+  border:none; border-radius: 999px;
+  padding: 14px 26px;
+  font-size: 15px; font-weight: 600;
+  cursor:pointer;
+  margin: 6px;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.btn-primary{ background: var(--violet); color:#fff; box-shadow: 0 10px 26px rgba(135,72,229,0.4); }
+.btn-primary:hover{ transform: translateY(-2px); }
+.btn-primary:disabled{ opacity: 0.6; cursor: default; transform:none; }
+.btn-secondary{ background: transparent; color: var(--violet); border: 1.5px solid rgba(135,72,229,0.35); }
+.btn-secondary:hover{ background: rgba(135,72,229,0.08); }
+.overlay-card small{ display:block; margin-top: 18px; color:#8a8296; font-size: 12px; }
+
+/* Panneau de réglages */
+.settings-panel{
+  position: fixed; top: calc(7vh + 90px); right: calc(4vw + 28px);
+  z-index: 210;
+  width: 300px;
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+.settings-panel[hidden]{ display:none; }
+.settings-panel h2{ margin:0 0 14px; font-size:16px; color:var(--text-on-light); }
+.settings-row{
+  display:flex; align-items:center; justify-content:space-between;
+  gap: 10px; margin-bottom: 14px; font-size: 14px; color:#4a4258;
+}
+.settings-row button{
+  width:100%; text-align:left;
+  background: rgba(135,72,229,0.08); border:none; border-radius: 12px;
+  padding: 10px 14px; color: var(--violet); font-weight:600; cursor:pointer;
+}
+
+/* Interrupteur simple */
+.switch{ position:relative; display:inline-block; width:42px; height:24px; flex-shrink:0; }
+.switch input{ opacity:0; width:0; height:0; }
+.switch .slider{
+  position:absolute; inset:0; background:#d9d5e2; border-radius:999px; transition: background .2s;
+}
+.switch .slider::before{
+  content:""; position:absolute; width:18px; height:18px; left:3px; top:3px;
+  background:#fff; border-radius:50%; transition: transform .2s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.switch input:checked + .slider{ background: var(--violet); }
+.switch input:checked + .slider::before{ transform: translateX(18px); }
+.switch input:focus-visible + .slider{ outline: 3px solid var(--violet-bright); outline-offset:2px; }
+
+/* Bandeau d'état discret */
+.status-toast{
+  position: fixed; left:50%; bottom: 22px; transform: translateX(-50%);
+  z-index: 150;
+  background: rgba(20,14,32,0.85);
+  color:#fff; font-size: 13px; padding: 10px 18px; border-radius: 999px;
+  opacity:0; transition: opacity var(--transition-med);
+  pointer-events:none;
+}
+.status-toast.is-visible{ opacity:1; }
+
+.visually-hidden{
+  position:absolute; width:1px; height:1px; overflow:hidden;
+  clip:rect(0 0 0 0); white-space:nowrap;
+}
+</style>
+</head>
+<body>
+
+<!-- Retour caméra en direct (fond plein écran) + voile de contraste -->
+<video id="bgVideo" class="bg-video" autoplay muted playsinline aria-hidden="true"></video>
+<div class="bg-scrim" id="bgScrim" aria-hidden="true"></div>
+
+<!-- ================= SCÈNE ================= -->
+<div class="stage" id="stage" data-attentive="true">
+
+  <div class="panel" id="panel">
+
+    <button class="pill-new fades-with-attention gaze-target" id="pillNew" data-action="new-interaction"
+            aria-label="Démarrer une nouvelle interaction">
+      Nouvelle interaction
+    </button>
+
+    <button class="menu-btn" id="menuBtn" aria-label="Ouvrir les réglages" aria-haspopup="true" aria-expanded="false">
+      •••
+    </button>
+
+    <!-- Minuteur(s) créé(s) par commande vocale (ex. « lance un minuteur de 5 minutes »).
+         Vide et masqué tant qu'aucun minuteur n'existe. -->
+    <div class="timer-hud" id="timerHud" aria-live="polite"></div>
+
+    <div class="orb-wrap">
+      <button class="orb gaze-target" id="orb" data-action="orb" aria-label="Orbe central, réactif à la voix">
+        <canvas class="orb-canvas" id="orbCanvas" aria-hidden="true"></canvas>
+      </button>
+    </div>
+
+    <div class="message-wrap fades-with-attention">
+      <div class="message-stage" id="messageStage">
+        <div class="message-inner" id="messageInner" aria-live="polite"><span id="interimContainer"></span></div>
+      </div>
+    </div>
+
+    <div class="dock-cluster">
+    <nav class="dock fades-with-attention" aria-label="Réactions rapides">
+      <button class="dock__btn gaze-target" data-action="mood-happy" aria-label="Humeur positive">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9.2"/><circle cx="8.7" cy="10" r="1"/><circle cx="15.3" cy="10" r="1"/><path d="M7.5 14.2c1 1.6 2.7 2.5 4.5 2.5s3.5-.9 4.5-2.5" stroke-linecap="round"/></svg>
+      </button>
+      <button class="dock__btn gaze-target" data-action="mood-calm" aria-label="Humeur calme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9.2"/><path d="M7.3 10.2c.6-.6 1.6-.6 2.2 0M14.5 10.2c.6-.6 1.6-.6 2.2 0" stroke-linecap="round"/><path d="M8 14.6c1 1 2.4 1.6 4 1.6s3-.6 4-1.6" stroke-linecap="round"/></svg>
+      </button>
+      <button class="dock__btn gaze-target" data-action="mood-neutral" aria-label="Humeur neutre">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9.2"/><circle cx="8.7" cy="10" r="1"/><circle cx="15.3" cy="10" r="1"/><path d="M8 15h8" stroke-linecap="round"/></svg>
+      </button>
+      <button class="dock__btn gaze-target" data-action="mood-wave" aria-label="Faire signe / interagir">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 13.5V8a1.4 1.4 0 0 1 2.8 0v3.5"/>
+          <path d="M9.8 11.2V6.6a1.4 1.4 0 0 1 2.8 0v5"/>
+          <path d="M12.6 11.4V7.4a1.4 1.4 0 0 1 2.8 0v5.4"/>
+          <path d="M15.4 12.8v-2a1.4 1.4 0 0 1 2.8 0v4.4c0 3-2 5.3-5.2 5.3-2 0-3.3-.6-4.6-2.2l-2.9-3.6c-.5-.7-.3-1.6.4-2 .6-.4 1.4-.3 1.9.3l1.2 1.5"/>
+        </svg>
+      </button>
+      <button class="dock__btn gaze-target" data-action="mood-like" aria-label="Valider / j'aime">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 11v8H5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h3Z"/>
+          <path d="M8 11l3.2-6.4a1.6 1.6 0 0 1 2.9.3l.4 1.6a2 2 0 0 1-.1 1.3L13.6 10H18a2 2 0 0 1 1.9 2.6l-1.6 5A2 2 0 0 1 16.4 19H8"/>
+        </svg>
+      </button>
+    </nav>
+
+    <button class="hand-btn fades-with-attention gaze-target" data-action="new-interaction" aria-label="Recommencer une interaction">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 13.5V8a1.4 1.4 0 0 1 2.8 0v3.5"/>
+        <path d="M9.8 11.2V6.6a1.4 1.4 0 0 1 2.8 0v5"/>
+        <path d="M12.6 11.4V7.4a1.4 1.4 0 0 1 2.8 0v5.4"/>
+        <path d="M15.4 12.8v-2a1.4 1.4 0 0 1 2.8 0v4.4c0 3-2 5.3-5.2 5.3-2 0-3.3-.6-4.6-2.2l-2.9-3.6c-.5-.7-.3-1.6.4-2 .6-.4 1.4-.3 1.9.3l1.2 1.5"/>
+      </svg>
+    </button>
+    </div>
+
+  </div>
+
+  <!-- Anneau de progression du dwell click, repositionné en JS sur l'élément visé -->
+  <div class="dwell-ring" id="dwellRing" aria-hidden="true">
+    <svg viewBox="0 0 100 100">
+      <circle class="ring-bg" cx="50" cy="50" r="45"></circle>
+      <circle class="ring-fg" id="dwellRingFg" cx="50" cy="50" r="45"></circle>
+    </svg>
+  </div>
+
+  <div class="center-feedback" id="centerFeedback" aria-live="polite"></div>
+
+</div>
+
+<!-- Petit point violet qui suit la souris -->
+<div class="gaze-dot" id="gazeDot" aria-hidden="true"></div>
+<div class="debug-panel" id="debugPanel" aria-hidden="true"></div>
+
+<div class="status-toast" id="statusToast" role="status"></div>
+
+<!-- ================= OVERLAY : DÉMARRAGE ================= -->
+<div class="overlay" id="permissionOverlay">
+  <div class="overlay-card">
+    <h1>Lancer la simulation</h1>
+    <p>
+      En démarrant, ta caméra s'ouvre en direct et sert de fond d'écran
+      (comme un vrai retour vidéo, jamais enregistré ni envoyé), pendant
+      que ton micro alimente l'orbe réactif à la voix. Si tu actives la
+      transcription en direct (réglable ensuite dans •••), elle utilise
+      le service de reconnaissance vocale intégré à ton navigateur.
+    </p>
+    <button class="btn-primary" id="btnEnableCamera">Démarrer avec la caméra</button>
+    <br>
+    <button class="btn-secondary" id="btnUseMouse">Continuer sans caméra</button>
+    <small id="permissionStatus"></small>
+  </div>
+</div>
+
+<!-- ================= PANNEAU RÉGLAGES ================= -->
+<div class="settings-panel" id="settingsPanel" hidden role="dialog" aria-label="Réglages">
+  <h2>Réglages</h2>
+  <div class="settings-row">
+    <span id="cameraLabel">Caméra + micro</span>
+    <label class="switch">
+      <input type="checkbox" id="toggleCamera" aria-labelledby="cameraLabel">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="settings-row">
+    <span id="cursorLabel">Curseur violet</span>
+    <label class="switch">
+      <input type="checkbox" id="toggleGazeCursor" checked aria-labelledby="cursorLabel">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="settings-row">
+    <span id="voiceLabel">Transcription vocale</span>
+    <label class="switch">
+      <input type="checkbox" id="toggleVoice" checked aria-labelledby="voiceLabel">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="settings-row">
+    <span id="debugLabel">Mode debug (données)</span>
+    <label class="switch">
+      <input type="checkbox" id="toggleDebug" aria-labelledby="debugLabel">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="settings-row" style="display:block; margin-bottom:0;">
+    <button id="btnCloseSettings">Fermer</button>
+  </div>
+</div>
+
+<script type="module">
+/* ================================================================================================
+   EXPÉRIENCE "INTERFACE VOCALE SUR FOND CAMÉRA"
+   ------------------------------------------------------------------------------------------------
+   Principe général (après retrait du suivi du regard par webcam, jugé peu fiable) :
+   1) Au lancement, on ouvre la caméra + le micro (une seule demande combinée). La vidéo est
+      affichée en direct, en plein écran, comme fond de scène (jamais envoyée ni enregistrée).
+   2) Le micro alimente localement deux choses :
+        - un orbe violet réactif (volume / hauteur / timbre de la voix, voir section ORBE),
+        - en option, une transcription en direct de type "prompteur" (Web Speech API).
+   3) Toute l'interface (pilule, menu, orbe, dock de réactions, bouton main, message) est posée
+      dans un panneau translucide par-dessus le retour caméra, comme sur la photo de référence.
+   4) L'interaction se fait à la souris : un point violet ("curseur") montre où l'on pointe, et un
+      "dwell click" (maintien du regard/curseur sur un élément) déclenche l'action après un court
+      délai, avec anneau de progression — repris tel quel du prototype précédent, qui fonctionnait
+      bien indépendamment du suivi oculaire.
+   5) Chaque élément reste un vrai <button>, donc accessible aussi au clic direct et au clavier.
+   ================================================================================================ */
+
+/* ============================================================
+   1. CONFIG — tous les réglages importants regroupés ici
+   ============================================================ */
+const CONFIG = {
+  // --- Dwell click (maintien du curseur pour "cliquer") ---
+  dwellTime: 1350,           // ms de maintien continu nécessaires pour "cliquer"
+  dwellLeaveGraceMs: 320,    // tolérance avant de réinitialiser la progression si le curseur sort brièvement
+  dwellCooldownMs: 700,      // anti rebond après une activation
+
+  // --- Sélection de cible (dwell) ---
+  // Au lieu d'exiger que le curseur tombe EXACTEMENT dans le petit rectangle d'un bouton,
+  // on sélectionne la cible interactive la plus PROCHE du point pointé, tant qu'elle reste
+  // à moins de maxSelectDistance pixels. Ça permet de distinguer plusieurs pictos rapprochés
+  // (les icônes de réaction) : celle dont le centre est le plus proche devient la cible.
+  maxSelectDistance: 120,    // px — tolérance autour de chaque cible
+  // Une fois qu'une cible est en cours de fixation (dwell démarré), on ne la change pas au
+  // profit d'une voisine à la moindre fluctuation : la nouvelle cible doit être nettement
+  // plus proche (marge ci-dessous) pour "voler" le focus — évite le clignotement entre deux
+  // pictos rapprochés.
+  targetSwitchMargin: 65,    // px
+
+  // --- Debug ---
+  debug: false,               // panneau texte détaillé (x/y/zone/état)
+  showGazeCursor: true,       // point "curseur" violet qui suit la souris — activé par défaut
+
+  // --- Voix : transcription en direct (repris de "prompteur vocal") ---
+  voiceEnabled: true,         // transcription activée par défaut (togglable dans •••)
+  speechLang: "fr-FR",
+  maxLines: 2,                // nombre de lignes visibles dans le prompteur
+
+  // --- Voix : orbe réactif (repris de "reconnaissance vocale décibels") ---
+  orbVoice: {
+    baseHue: 265,             // teinte violette fixe (~ #8748E5) : seules luminosité/opacité varient
+    points: 10,                // nombre de points du contour organique
+    idleVolume: 0.14,          // "respiration" de repos tant que le micro n'est pas actif
+    idleSpeed: 0.5,
+    volAttack: 0.34,          // la forme gonfle vite quand la voix monte...
+    volRelease: 0.09,         // ...et se rétracte plus lentement, comme une respiration
+    smoothPitch: 0.1,
+    smoothTimbre: 0.12,
+    focusBoost: 0.18          // supplément de "volume" simulé quand l'orbe est ciblé
+  },
+
+  // --- Contenus modifiables facilement ---
+  // (l'ancienne phrase de démo pré-remplie a été retirée : le prompteur ne
+  // doit plus jamais afficher de texte tant que rien n'a réellement été dit)
+  moodFeedback: {
+    "mood-happy": "🙂 Humeur positive sélectionnée",
+    "mood-calm": "😌 Calme sélectionné",
+    "mood-neutral": "😐 Neutre sélectionné",
+    "mood-wave": "👋 Interaction envoyée",
+    "mood-like": "👍 Validé"
+  }
+};
+
+/* ============================================================
+   2. STATE — état mutable de l'application
+   ============================================================ */
+const STATE = {
+  cameraOn: false,
+  stream: null,
+  rafId: null,
+
+  // Attention (visibilité de l'interface)
+  attentive: false,
+
+  // Dwell click
+  dwellTarget: null,
+  dwellStart: 0,
+  dwellLeaveSince: 0,
+  dwellCooldownUntil: 0,
+
+  // Souris : pilote entièrement le curseur et le dwell-click
+  mouseInside: true,   // vrai par défaut pour que l'interface soit visible avant le premier mouvement
+  mouseGaze: { x: 0.5, y: 0.5 },
+  reducedMotion: false,
+
+  // --- Audio (analyse locale du micro, pour l'orbe réactif) ---
+  audioCtx: null,
+  analyser: null,
+  audioTimeData: null,
+  audioFreqData: null,
+  voiceActive: false,           // true dès que le flux micro + analyser sont prêts
+  voice: { volume: 0, pitch: 180, pitchNorm: 0.3, timbre: 0.3 },
+  orbT: 0,
+
+  // --- Transcription vocale (Web Speech API) ---
+  recognition: null,
+  transcribing: false,
+  manualStopTranscription: true
+};
+
+/* ============================================================
+   3. DOM REFERENCES
+   ============================================================ */
+const dom = {
+  stage: document.getElementById("stage"),
+  bgVideo: document.getElementById("bgVideo"),
+  bgScrim: document.getElementById("bgScrim"),
+  orb: document.getElementById("orb"),
+  orbCanvas: document.getElementById("orbCanvas"),
+  messageStage: document.getElementById("messageStage"),
+  messageInner: document.getElementById("messageInner"),
+  interimContainer: document.getElementById("interimContainer"),
+  gazeDot: document.getElementById("gazeDot"),
+  debugPanel: document.getElementById("debugPanel"),
+  dwellRing: document.getElementById("dwellRing"),
+  dwellRingFg: document.getElementById("dwellRingFg"),
+  centerFeedback: document.getElementById("centerFeedback"),
+  statusToast: document.getElementById("statusToast"),
+  timerHud: document.getElementById("timerHud"),
+
+  permissionOverlay: document.getElementById("permissionOverlay"),
+  btnEnableCamera: document.getElementById("btnEnableCamera"),
+  btnUseMouse: document.getElementById("btnUseMouse"),
+  permissionStatus: document.getElementById("permissionStatus"),
+
+  menuBtn: document.getElementById("menuBtn"),
+  settingsPanel: document.getElementById("settingsPanel"),
+  toggleCamera: document.getElementById("toggleCamera"),
+  toggleDebug: document.getElementById("toggleDebug"),
+  toggleGazeCursor: document.getElementById("toggleGazeCursor"),
+  toggleVoice: document.getElementById("toggleVoice"),
+  btnCloseSettings: document.getElementById("btnCloseSettings")
+};
+
+// Toutes les cibles "cliquables au dwell" de l'interface
+const gazeTargets = Array.from(document.querySelectorAll(".gaze-target"));
+
+const RING_CIRCUMFERENCE = 2 * Math.PI * 45; // rayon = 45 (voir le SVG)
+dom.dwellRingFg.style.strokeDasharray = String(RING_CIRCUMFERENCE);
+
+/* ============================================================
+   UTILITAIRES
+   ============================================================ */
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function showToast(text, duration = 3200) {
+  dom.statusToast.textContent = text;
+  dom.statusToast.classList.add("is-visible");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => dom.statusToast.classList.remove("is-visible"), duration);
+}
+
+// Découpage conceptuel de l'écran en 5 zones (utilisé pour le panneau de debug uniquement).
+function classifyZone(x, y) {
+  const cx = x - 0.5, cy = y - 0.5;
+  const centerRadius = 0.16;
+  if (Math.abs(cx) < centerRadius && Math.abs(cy) < centerRadius) return "center";
+  if (Math.abs(cx) > Math.abs(cy)) return cx < 0 ? "left" : "right";
+  return cy < 0 ? "top" : "bottom";
+}
+
+/* ============================================================
+   4. CAMÉRA + MICRO — retour vidéo en direct + analyse audio locale
+   ------------------------------------------------------------
+   Une seule demande de permission combinée (vidéo + audio) : la piste
+   vidéo alimente le fond d'écran plein écran, la piste audio alimente à
+   la fois l'orbe réactif à la voix et, si activée, la transcription en
+   direct. Tout tourne dans le navigateur ; voir setupVoiceAnalysis().
+   ============================================================ */
+async function startCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error("getUserMedia indisponible sur ce navigateur.");
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+    audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false }
+  });
+  STATE.stream = stream;
+  dom.bgVideo.srcObject = stream;
+  await dom.bgVideo.play();
+  dom.bgVideo.classList.add("is-active");
+  dom.bgScrim.classList.add("is-active");
+  STATE.cameraOn = true;
+  return stream;
+}
+
+function stopCamera() {
+  if (STATE.stream) {
+    STATE.stream.getTracks().forEach((t) => t.stop());
+    STATE.stream = null;
+  }
+  dom.bgVideo.srcObject = null;
+  dom.bgVideo.classList.remove("is-active");
+  dom.bgScrim.classList.remove("is-active");
+  STATE.cameraOn = false;
+  teardownVoiceAnalysis();
+  stopTranscription(true);
+}
+
+/* ============================================================
+   5. DWELL INTERACTION — "clic" par maintien du curseur
+   ------------------------------------------------------------
+   Principe : à chaque frame, on transforme la position du curseur (souris)
+   en coordonnées pixels, puis on cherche la cible .gaze-target la plus
+   PROCHE de ce point (findNearestTarget), plutôt que d'exiger un hit exact
+   dans un petit rectangle. Ensuite :
+     - nouvelle cible → on redémarre la progression
+     - même cible     → la progression avance ; à 100% → activation
+     - aucune cible    → on tolère une petite fenêtre (grâce) avant de
+                          réinitialiser, pour absorber le bruit du curseur
+   Pour éviter que la sélection ne "saute" nerveusement entre deux icônes
+   voisines pendant un dwell en cours, une cible déjà en cours de fixation
+   n'est remplacée que si une autre cible est nettement plus proche
+   (CONFIG.targetSwitchMargin) — voir findNearestTarget().
+   ============================================================ */
+function findNearestTarget(px, py) {
+  let best = null;
+  let bestDist = Infinity;
+  let currentDist = Infinity;
+
+  for (const el of gazeTargets) {
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const elementRadius = Math.max(r.width, r.height) / 2;
+    // Distance "à la surface" de l'élément (négative = le curseur est déjà dedans)
+    const dist = Math.hypot(px - cx, py - cy) - elementRadius;
+
+    if (el === STATE.dwellTarget) currentDist = dist;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = el;
+    }
+  }
+
+  if (best && bestDist > CONFIG.maxSelectDistance) return null;
+
+  // Une cible déjà fixée reste prioritaire tant qu'aucune autre n'est nettement plus proche :
+  // ça évite le clignotement entre deux pictos voisins à cause du bruit du curseur.
+  if (
+    STATE.dwellTarget &&
+    best !== STATE.dwellTarget &&
+    currentDist <= CONFIG.maxSelectDistance &&
+    bestDist > currentDist - CONFIG.targetSwitchMargin
+  ) {
+    return STATE.dwellTarget;
+  }
+
+  return best;
+}
+
+function updateInteraction(normX, normY, isAttentive) {
+  // Position du curseur en pixels écran (utile pour le point affiché et le hit-test)
+  const px = normX * window.innerWidth;
+  const py = normY * window.innerHeight;
+
+  updateGazeCursor(px, py);
+
+  if (!isAttentive) {
+    clearDwell();
+    return;
+  }
+
+  const now = performance.now();
+  const target = findNearestTarget(px, py);
+
+  if (target) {
+    STATE.dwellLeaveSince = 0;
+
+    if (STATE.dwellTarget !== target) {
+      // Nouvelle cible : on repart de zéro
+      setFocused(STATE.dwellTarget, false);
+      STATE.dwellTarget = target;
+      STATE.dwellStart = now;
+      setFocused(target, true);
+    }
+
+    if (now < STATE.dwellCooldownUntil) {
+      setDwellProgress(0, target);
+      return;
+    }
+
+    const elapsed = now - STATE.dwellStart;
+    const progress = clamp01(elapsed / CONFIG.dwellTime);
+    setDwellProgress(progress, target);
+
+    if (progress >= 1) {
+      activate(target);
+      STATE.dwellStart = now;
+      STATE.dwellCooldownUntil = now + CONFIG.dwellCooldownMs;
+      setDwellProgress(0, target);
+    }
+  } else if (STATE.dwellTarget) {
+    // Pas de cible sous le curseur : on tolère une courte grâce avant de couper
+    if (!STATE.dwellLeaveSince) STATE.dwellLeaveSince = now;
+    if (now - STATE.dwellLeaveSince > CONFIG.dwellLeaveGraceMs) {
+      clearDwell();
+    }
+  }
+}
+
+function setFocused(el, isFocused) {
+  if (!el) return;
+  el.classList.toggle("is-focused", isFocused);
+}
+
+function setDwellProgress(progress, target) {
+  // L'orbe a déjà son propre retour visuel (halo/scale via .is-focused, voir
+  // orbLoop) : on ne superpose pas en plus l'anneau rose de progression dessus.
+  if (target === dom.orb) {
+    dom.dwellRing.classList.remove("is-active");
+    return;
+  }
+
+  const r = target.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const size = Math.max(r.width, r.height) + 26;
+
+  dom.dwellRing.style.left = cx + "px";
+  dom.dwellRing.style.top = cy + "px";
+  dom.dwellRing.style.width = size + "px";
+  dom.dwellRing.style.height = size + "px";
+  dom.dwellRing.classList.toggle("is-active", progress > 0.02);
+  dom.dwellRingFg.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - progress));
+}
+
+function clearDwell() {
+  setFocused(STATE.dwellTarget, false);
+  STATE.dwellTarget = null;
+  STATE.dwellStart = 0;
+  STATE.dwellLeaveSince = 0;
+  dom.dwellRing.classList.remove("is-active");
+  dom.dwellRingFg.style.strokeDashoffset = String(RING_CIRCUMFERENCE);
+}
+
+/* ============================================================
+   ACTIVATION — ce qui se passe quand un élément est "cliqué"
+   ============================================================ */
+function activate(el) {
+  const action = el.dataset.action;
+  pulse(el);
+
+  switch (action) {
+    case "new-interaction":
+      // "Nouvelle interaction" : on vide le prompteur. Aucune phrase de démo n'est
+      // réinjectée : il reste vide jusqu'à ce que quelque chose soit réellement dit.
+      resetTeleprompter();
+      showCenterFeedback("✨ Nouvelle interaction");
+      break;
+
+    case "orb":
+      // Simple retour visuel : le clic sur l'orbe n'insère plus de phrase de
+      // démonstration dans le prompteur, qui ne doit refléter que la transcription
+      // vocale réelle (voir recognition.onresult).
+      showCenterFeedback("🎧");
+      break;
+
+    default:
+      if (CONFIG.moodFeedback[action]) {
+        showCenterFeedback(CONFIG.moodFeedback[action]);
+        el.classList.add("is-selected");
+        setTimeout(() => el.classList.remove("is-selected"), 650);
+      }
+  }
+}
+
+function pulse(el) {
+  el.classList.add("is-selected");
+  setTimeout(() => el.classList.remove("is-selected"), 650);
+}
+
+function showCenterFeedback(text) {
+  dom.centerFeedback.textContent = text;
+  dom.centerFeedback.classList.add("is-visible");
+  clearTimeout(showCenterFeedback._t);
+  showCenterFeedback._t = setTimeout(() => {
+    dom.centerFeedback.classList.remove("is-visible");
+  }, 1500);
+}
+
+/* ============================================================
+   6. ORBE RÉACTIF À LA VOIX ("boule violette")
+   ------------------------------------------------------------
+   Repris de la démo de référence "reconnaissance vocale décibels" : le
+   VOLUME de la voix pilote la taille de la forme (elle gonfle quand on
+   parle fort, se rétracte doucement sinon, comme une respiration —
+   montée rapide / descente lente, voir smoothToward), pendant que la
+   HAUTEUR (pitch, détectée par autocorrélation sur le signal temporel)
+   fait varier la vitesse d'ondulation et le TIMBRE (centroïde spectral)
+   la complexité du contour organique. Tourne en boucle continue depuis
+   le chargement de la page (sa propre requestAnimationFrame), même
+   avant toute permission : tant que le micro n'est pas actif, l'orbe
+   respire doucement à vide (idleVolume) plutôt que de rester figé.
+   ============================================================ */
+
+// --- petit générateur de bruit de valeur (value noise), sans librairie ---
+const ORB_NOISE_SIZE = 256;
+const orbNoiseTable = new Float32Array(ORB_NOISE_SIZE);
+for (let i = 0; i < ORB_NOISE_SIZE; i++) orbNoiseTable[i] = Math.random() * 2 - 1;
+function orbNoise1D(x) {
+  const xi = Math.floor(x) % ORB_NOISE_SIZE;
+  const xf = x - Math.floor(x);
+  const i0 = ((xi % ORB_NOISE_SIZE) + ORB_NOISE_SIZE) % ORB_NOISE_SIZE;
+  const i1 = (i0 + 1) % ORB_NOISE_SIZE;
+  const a = orbNoiseTable[i0];
+  const b = orbNoiseTable[i1];
+  const s = xf * xf * (3 - 2 * xf); // smoothstep
+  return a + (b - a) * s;
+}
+
+function rmsVolume(buf) {
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+  return Math.sqrt(sum / buf.length);
+}
+
+// Détection de hauteur par autocorrélation (méthode ACF classique) sur le signal
+// temporel brut — suffisant pour une estimation "vivante" du pitch, pas pour de
+// l'analyse musicale de précision.
+function detectPitch(buf, sampleRate) {
+  const SIZE = buf.length;
+  const rms = rmsVolume(buf);
+  if (rms < 0.008) return -1; // trop silencieux, pas fiable
+
+  let r1 = 0, r2 = SIZE - 1;
+  const threshold = 0.2;
+  for (let i = 0; i < SIZE / 2; i++) {
+    if (Math.abs(buf[i]) < threshold) { r1 = i; break; }
+  }
+  for (let i = 1; i < SIZE / 2; i++) {
+    if (Math.abs(buf[SIZE - i]) < threshold) { r2 = SIZE - i; break; }
+  }
+  const trimmed = buf.slice(r1, r2);
+  const n = trimmed.length;
+  if (n < 8) return -1;
+
+  const c = new Float32Array(n);
+  for (let lag = 0; lag < n; lag++) {
+    let sum = 0;
+    for (let j = 0; j < n - lag; j++) sum += trimmed[j] * trimmed[j + lag];
+    c[lag] = sum;
+  }
+
+  let d = 0;
+  while (d + 1 < n && c[d] > c[d + 1]) d++;
+
+  let maxVal = -1, maxPos = -1;
+  for (let i = d; i < n; i++) {
+    if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
+  }
+  if (maxPos <= 0 || maxPos >= n - 1) return -1;
+
+  const x1 = c[maxPos - 1], x2 = c[maxPos], x3 = c[maxPos + 1];
+  const a = (x1 + x3 - 2 * x2) / 2;
+  const b = (x3 - x1) / 2;
+  const shift = a ? -b / (2 * a) : 0;
+  const period = maxPos + shift;
+  const freq = sampleRate / period;
+  if (freq < 60 || freq > 1000) return -1; // hors plage vocale plausible
+  return freq;
+}
+
+function spectralCentroid(freq, sampleRate) {
+  let num = 0, den = 0;
+  const nyquist = sampleRate / 2;
+  for (let i = 0; i < freq.length; i++) {
+    const f = (i / freq.length) * nyquist;
+    const mag = freq[i];
+    num += f * mag;
+    den += mag;
+  }
+  return den > 0 ? num / den : 0;
+}
+
+// Lissage asymétrique : montée rapide (la forme gonfle vite) et descente plus
+// lente (elle se rétracte doucement) — un lerp symétrique aurait un rendu plat.
+function smoothToward(current, target, attack, release) {
+  const rate = target > current ? attack : release;
+  return current + (target - current) * rate;
+}
+
+// --- Analyse audio locale (Web Audio API), branchée sur la piste micro du flux
+//     déjà obtenu pour la caméra (une seule permission, voir startCamera). Aucune
+//     connexion vers la sortie audio : le son n'est jamais rejoué ni transmis. ---
+function setupVoiceAnalysis(stream) {
+  try {
+    STATE.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = STATE.audioCtx.createMediaStreamSource(stream);
+    STATE.analyser = STATE.audioCtx.createAnalyser();
+    STATE.analyser.fftSize = 2048;
+    STATE.analyser.smoothingTimeConstant = 0.4;
+    source.connect(STATE.analyser);
+    STATE.audioTimeData = new Float32Array(STATE.analyser.fftSize);
+    STATE.audioFreqData = new Uint8Array(STATE.analyser.frequencyBinCount);
+    STATE.voiceActive = true;
+  } catch (err) {
+    console.warn("[eye-ui] analyse vocale indisponible", err);
+    STATE.voiceActive = false;
+  }
+}
+
+function teardownVoiceAnalysis() {
+  if (STATE.audioCtx) STATE.audioCtx.close().catch(() => {});
+  STATE.audioCtx = null;
+  STATE.analyser = null;
+  STATE.audioTimeData = null;
+  STATE.audioFreqData = null;
+  STATE.voiceActive = false;
+}
+
+// --- Dimensionnement du canvas de l'orbe (responsive, tient compte du DPR) ---
+let orbW = 0, orbH = 0;
+const orbDPR = Math.min(window.devicePixelRatio || 1, 2);
+const orbCtx = dom.orbCanvas.getContext("2d");
+
+function resizeOrbCanvas() {
+  const rect = dom.orbCanvas.getBoundingClientRect();
+  orbW = rect.width;
+  orbH = rect.height;
+  dom.orbCanvas.width = Math.max(1, Math.round(orbW * orbDPR));
+  dom.orbCanvas.height = Math.max(1, Math.round(orbH * orbDPR));
+  orbCtx.setTransform(orbDPR, 0, 0, orbDPR, 0, 0);
+}
+
+function buildOrbPoints(cx, cy, radius, pitchNorm, timbre, volume, t) {
+  const cfg = CONFIG.orbVoice;
+  const rotSpeed = 0.12 + pitchNorm * 0.55;   // la hauteur de la voix accélère l'ondulation
+  const wobbleAmp = 0.16 + volume * 0.42;     // le volume garde une influence sur l'amplitude
+  const detail = 0.4 + timbre * 1.6;          // plus de détail = contour plus complexe
+
+  const pts = [];
+  for (let i = 0; i < cfg.points; i++) {
+    const angle = (i / cfg.points) * Math.PI * 2;
+    const n1 = orbNoise1D(i * 0.9 + t * rotSpeed);
+    const n2 = orbNoise1D(i * detail * 2.3 - t * rotSpeed * 1.4 + 50);
+    const n = n1 * 0.7 + n2 * 0.3 * timbre;
+    const r = radius * (1 + n * wobbleAmp);
+    pts.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
+  }
+  return pts;
+}
+
+function traceOrbPolygon(pts) {
+  orbCtx.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    const p0 = pts[i];
+    const p1 = pts[(i + 1) % pts.length];
+    const mx = (p0.x + p1.x) / 2;
+    const my = (p0.y + p1.y) / 2;
+    if (i === 0) orbCtx.moveTo(mx, my);
+    orbCtx.quadraticCurveTo(p0.x, p0.y, mx, my);
+  }
+  orbCtx.closePath();
+}
+
+function drawOrb(volume, pitchNorm, timbre, t) {
+  if (orbW === 0 || orbH === 0) return;
+  orbCtx.clearRect(0, 0, orbW, orbH);
+
+  const cx = orbW / 2;
+  const cy = orbH / 2;
+  const hue = CONFIG.orbVoice.baseHue; // teinte violette fixe — on ne fait varier que L/S/opacité
+
+  const baseRadius = Math.min(orbW, orbH) * 0.16;
+  const volScale = 0.55 + volume * 1.55;
+  const radius = baseRadius * volScale;
+
+  const lightness = 42 + volume * 20;
+  const sat = 68 + volume * 15;
+
+  orbCtx.save();
+  orbCtx.globalCompositeOperation = "lighter";
+
+  // halo externe très diffus
+  orbCtx.filter = "blur(18px)";
+  const outerR = radius * 1.9;
+  const outerGrad = orbCtx.createRadialGradient(cx, cy, 0, cx, cy, outerR);
+  outerGrad.addColorStop(0, `hsla(${hue}, ${sat}%, ${lightness + 10}%, ${0.24 + volume * 0.28})`);
+  outerGrad.addColorStop(1, `hsla(${hue}, ${sat}%, ${lightness}%, 0)`);
+  orbCtx.fillStyle = outerGrad;
+  orbCtx.beginPath();
+  orbCtx.arc(cx, cy, outerR, 0, Math.PI * 2);
+  orbCtx.fill();
+
+  // halo intermédiaire, plus dense
+  orbCtx.filter = "blur(11px)";
+  const midR = radius * 1.4;
+  const midGrad = orbCtx.createRadialGradient(cx, cy, 0, cx, cy, midR);
+  midGrad.addColorStop(0, `hsla(${hue}, ${sat}%, ${lightness + 14}%, ${0.38 + volume * 0.3})`);
+  midGrad.addColorStop(1, `hsla(${hue}, ${sat}%, ${lightness}%, 0)`);
+  orbCtx.fillStyle = midGrad;
+  orbCtx.beginPath();
+  orbCtx.arc(cx, cy, midR, 0, Math.PI * 2);
+  orbCtx.fill();
+
+  // corps principal : forme organique, contour toujours fondu
+  orbCtx.filter = "blur(6px)";
+  const pts = buildOrbPoints(cx, cy, radius, pitchNorm, timbre, volume, t);
+  traceOrbPolygon(pts);
+  const coreGrad = orbCtx.createRadialGradient(
+    cx - radius * 0.2, cy - radius * 0.25, 0,
+    cx, cy, radius * 1.15
+  );
+  coreGrad.addColorStop(0, `hsla(${hue}, ${sat}%, ${lightness + 26}%, 0.95)`);
+  coreGrad.addColorStop(0.45, `hsla(${hue}, ${sat}%, ${lightness + 8}%, 0.85)`);
+  coreGrad.addColorStop(0.78, `hsla(${hue}, ${sat}%, ${lightness - 6}%, 0.55)`);
+  coreGrad.addColorStop(1, `hsla(${hue}, ${sat}%, ${lightness - 10}%, 0)`);
+  orbCtx.fillStyle = coreGrad;
+  orbCtx.fill();
+
+  orbCtx.restore();
+}
+
+// Boucle d'animation continue de l'orbe — indépendante des autres boucles,
+// pour que la forme reste vivante même sans caméra/micro actif.
+function orbLoop() {
+  requestAnimationFrame(orbLoop);
+  STATE.orbT += 0.016;
+  const cfg = CONFIG.orbVoice;
+  const v = STATE.voice;
+
+  let rawVolume, pitchHz = -1, rawTimbre;
+
+  if (STATE.voiceActive && STATE.analyser) {
+    STATE.analyser.getFloatTimeDomainData(STATE.audioTimeData);
+    STATE.analyser.getByteFrequencyData(STATE.audioFreqData);
+    const rms = rmsVolume(STATE.audioTimeData);
+    rawVolume = Math.min(1, Math.pow(rms * 7.5, 0.85));
+    pitchHz = detectPitch(STATE.audioTimeData, STATE.audioCtx.sampleRate);
+    const centroid = spectralCentroid(STATE.audioFreqData, STATE.audioCtx.sampleRate);
+    rawTimbre = Math.min(1, centroid / 3800);
+  } else {
+    // Micro pas (encore) actif : respiration de repos, pour ne jamais rester figé.
+    rawVolume = cfg.idleVolume + Math.sin(STATE.orbT * cfg.idleSpeed) * 0.04;
+    rawTimbre = 0.28;
+  }
+
+  v.volume = smoothToward(v.volume, rawVolume, cfg.volAttack, cfg.volRelease);
+
+  if (pitchHz > 0) {
+    const norm = Math.min(1, Math.max(0, (pitchHz - 80) / (420 - 80)));
+    v.pitchNorm += (norm - v.pitchNorm) * cfg.smoothPitch;
+    v.pitch += (pitchHz - v.pitch) * cfg.smoothPitch;
+  } else {
+    v.pitchNorm += (0.3 - v.pitchNorm) * 0.03; // relâchement doux vers le centre
+  }
+
+  v.timbre += (rawTimbre - v.timbre) * cfg.smoothTimbre;
+
+  // Léger "boost" de volume simulé quand l'orbe est ciblé : renforce le retour visuel
+  // du dwell-click, en plus du scale CSS appliqué au bouton.
+  const focused = dom.orb.classList.contains("is-focused") || dom.orb.classList.contains("is-selected");
+  const displayVolume = Math.min(1.25, v.volume + (focused ? cfg.focusBoost : 0));
+
+  drawOrb(displayVolume, v.pitchNorm, v.timbre, STATE.orbT);
+}
+
+/* ============================================================
+   7. TRANSCRIPTION VOCALE — "prompteur" en direct (Web Speech API)
+   ------------------------------------------------------------
+   Repris du fichier de référence "prompteur vocal" : la reconnaissance
+   vocale continue du navigateur alimente le message dans le panneau mot
+   par mot (mots "final" qui s'accumulent + mot(s) "interim" en cours,
+   semi-transparents), avec un effet de défilement type prompteur limité
+   à CONFIG.maxLines lignes visibles (#messageStage masque le
+   débordement, #messageInner se translate vers le haut). Togglable à
+   tout moment dans les réglages (•••).
+   ============================================================ */
+let promptLineHeight = 0;
+let promptStageHeight = 0;
+
+function measureTeleprompter() {
+  const fontSize = parseFloat(getComputedStyle(dom.messageInner).fontSize);
+  const ratio =
+    parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--line-height-ratio")) || 1.25;
+  promptLineHeight = fontSize * ratio;
+  promptStageHeight = promptLineHeight * CONFIG.maxLines;
+  dom.messageStage.style.height = promptStageHeight + "px";
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
+function currentTranslateY(el) {
+  const transform = getComputedStyle(el).transform;
+  if (transform === "none") return 0;
+  const matrix = new DOMMatrixReadOnly(transform);
+  return matrix.m42;
+}
+
+function updateTeleprompterScroll(animate) {
+  const overflow = dom.messageInner.scrollHeight - promptStageHeight;
+  const target = overflow > 0 ? -overflow : 0;
+  if (animate === false) {
+    dom.messageInner.style.transition = "none";
+    dom.messageInner.style.transform = "translateY(" + target + "px)";
+    void dom.messageInner.offsetHeight; // force reflow
+    dom.messageInner.style.transition = "";
+  } else {
+    dom.messageInner.style.transform = "translateY(" + target + "px)";
+  }
+}
+
+// Supprime du DOM les mots dont la ligne est déjà sortie de la scène, en
+// compensant instantanément le décalage pour éviter tout saut visuel.
+function cleanupOldWords() {
+  const stageTop = dom.messageStage.getBoundingClientRect().top;
+  let safety = 0;
+
+  while (dom.messageInner.children.length > 1 && safety < 300) {
+    safety++;
+    const first = dom.messageInner.children[0];
+    if (first === dom.interimContainer) break;
+
+    const rect = first.getBoundingClientRect();
+    if (rect.bottom <= stageTop + 0.5) {
+      const beforeHeight = dom.messageInner.scrollHeight;
+      first.remove();
+      const afterHeight = dom.messageInner.scrollHeight;
+      const diff = beforeHeight - afterHeight;
+
+      if (diff > 0) {
+        const cur = currentTranslateY(dom.messageInner);
+        dom.messageInner.style.transition = "none";
+        dom.messageInner.style.transform = "translateY(" + (cur + diff) + "px)";
+        void dom.messageInner.offsetHeight;
+        dom.messageInner.style.transition = "";
+      }
+    } else {
+      break;
+    }
+  }
+}
+
+dom.messageInner.addEventListener("transitionend", (e) => {
+  if (e.propertyName === "transform") cleanupOldWords();
+});
+
+function appendFinalWords(text) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  words.forEach((w) => {
+    const span = document.createElement("span");
+    span.className = "word entering";
+    span.textContent = w + " ";
+    dom.messageInner.insertBefore(span, dom.interimContainer);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => span.classList.remove("entering"));
+    });
+  });
+  updateTeleprompterScroll(true);
+}
+
+function setInterimWords(text) {
+  dom.interimContainer.innerHTML = "";
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  words.forEach((w) => {
+    const span = document.createElement("span");
+    span.className = "word interim";
+    span.textContent = w + " ";
+    dom.interimContainer.appendChild(span);
+  });
+  updateTeleprompterScroll(true);
+}
+
+// Vide le prompteur — utilisé par le bouton "Nouvelle interaction" (pilule +
+// main). Ne réaffiche plus aucune phrase de démo : il reste vide tant que
+// rien de nouveau n'a été transcrit.
+function resetTeleprompter() {
+  Array.from(dom.messageInner.children).forEach((child) => {
+    if (child !== dom.interimContainer) child.remove();
+  });
+  dom.interimContainer.innerHTML = "";
+  updateTeleprompterScroll(false);
+}
+
+// --- Reconnaissance vocale native du navigateur ---
+// Remarque vie privée : contrairement à l'orbe et à l'affichage caméra (100% locaux),
+// cette API envoie généralement l'audio au service de reconnaissance vocale du
+// navigateur pour le transcrire — d'où le toggle dédié dans les réglages.
+const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function createRecognition() {
+  const recognition = new SpeechRecognitionImpl();
+  recognition.lang = CONFIG.speechLang;
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  recognition.onresult = (event) => {
+    let interimText = "";
+    let finalText = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result = event.results[i];
+      const transcript = result[0].transcript;
+      if (result.isFinal) finalText += transcript + " ";
+      else interimText += transcript;
+    }
+    if (finalText) {
+      appendFinalWords(finalText);
+      maybeHandleTimerCommand(finalText);
+    }
+    setInterimWords(interimText);
+  };
+
+  recognition.onerror = (event) => {
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      showToast("Micro refusé pour la transcription : elle reste désactivée.");
+      STATE.manualStopTranscription = true;
+      STATE.transcribing = false;
+      dom.toggleVoice.checked = false;
+    }
+    // "no-speech" / "aborted" : silence temporaire, ignoré — onend gère le redémarrage.
+  };
+
+  recognition.onend = () => {
+    STATE.transcribing = false;
+    if (!STATE.manualStopTranscription) {
+      // Chrome interrompt périodiquement la session : on relance automatiquement.
+      try {
+        recognition.start();
+        STATE.transcribing = true;
+      } catch (e) { /* déjà démarré ou erreur transitoire, ignoré */ }
+    }
+  };
+
+  return recognition;
+}
+
+function startTranscription() {
+  if (!SpeechRecognitionImpl) {
+    showToast("La transcription vocale n'est pas supportée par ce navigateur.");
+    dom.toggleVoice.checked = false;
+    return;
+  }
+  if (STATE.transcribing) return;
+  if (!STATE.recognition) STATE.recognition = createRecognition();
+  STATE.manualStopTranscription = false;
+  try {
+    STATE.recognition.start();
+    STATE.transcribing = true;
+  } catch (e) { /* déjà démarré, ignoré */ }
+}
+
+function stopTranscription(silent) {
+  STATE.manualStopTranscription = true;
+  if (STATE.recognition && STATE.transcribing) {
+    try { STATE.recognition.stop(); } catch (e) { /* ignoré */ }
+  }
+  STATE.transcribing = false;
+  if (!silent) setInterimWords("");
+}
+
+/* ============================================================
+   8. MINUTEURS VOCAUX — un timer apparaît dans l'interface quand on
+      fait la commande vocale
+   ------------------------------------------------------------
+   Repris du prototype "minuteurs vocaux" : dès que la phrase transcrite
+   (finale) contient le mot "minuteur" (ou "chrono"), on essaie d'en
+   extraire une durée / un nom / une intention (créer, mettre en pause,
+   reprendre, réinitialiser, supprimer, interroger le temps restant). Un
+   minuteur créé apparaît sous forme de pastille dans #timerHud, en haut
+   du panneau, et disparaît automatiquement (fin de minuteur ou
+   suppression) quand il n'y en a plus aucun. Le reste de la
+   transcription libre n'est jamais interprété comme une commande.
+   ============================================================ */
+const voiceTimers = [];
+let nextTimerId = 1;
+
+function fmtTimer(totalSeconds) {
+  totalSeconds = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+}
+
+// Chime de fin de minuteur : contexte audio dédié, indépendant de celui de
+// l'analyse vocale de l'orbe (setupVoiceAnalysis / teardownVoiceAnalysis).
+let chimeCtx = null;
+function playChime() {
+  try {
+    chimeCtx = chimeCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const now = chimeCtx.currentTime;
+    [880, 1320].forEach((freq, i) => {
+      const osc = chimeCtx.createOscillator();
+      const gain = chimeCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now + i * 0.14);
+      gain.gain.linearRampToValueAtTime(0.11, now + i * 0.14 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.14 + 0.5);
+      osc.connect(gain).connect(chimeCtx.destination);
+      osc.start(now + i * 0.14);
+      osc.stop(now + i * 0.14 + 0.55);
+    });
+  } catch (e) { /* audio indisponible, on ignore */ }
+}
+
+function speakTimerFeedback(text) {
+  try {
+    if (!("speechSynthesis" in window)) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = CONFIG.speechLang;
+    u.rate = 1.02;
+    window.speechSynthesis.speak(u);
+  } catch (e) { /* ignore */ }
+}
+
+function updateTimerHudVisibility() {
+  dom.timerHud.classList.toggle("is-visible", voiceTimers.length > 0);
+}
+
+function createTimerPillEl() {
+  const pill = document.createElement("div");
+  pill.className = "timer-pill";
+  pill.innerHTML =
+    '<span class="timer-dot"></span>' +
+    '<span class="timer-name"></span>' +
+    '<span class="timer-time"></span>' +
+    '<div class="timer-bar"><div class="timer-bar-fill"></div></div>';
+  dom.timerHud.appendChild(pill);
+  return pill;
+}
+
+function renderTimerPill(t) {
+  const pill = t.el;
+  pill.classList.toggle("running", t.state === "running");
+  pill.classList.toggle("paused", t.state === "paused");
+  pill.classList.toggle("finished", t.state === "finished");
+  pill.querySelector(".timer-name").textContent = t.name || "";
+  pill.querySelector(".timer-time").textContent = fmtTimer(t.remaining);
+  const pct = t.total > 0 ? Math.min(100, ((t.total - t.remaining) / t.total) * 100) : 0;
+  pill.querySelector(".timer-bar-fill").style.width = pct + "%";
+}
+
+function createVoiceTimer(totalSeconds, name) {
+  const t = {
+    id: nextTimerId++,
+    name: name || "",
+    total: totalSeconds,
+    remaining: totalSeconds,
+    state: "running",
+    endTime: Date.now() + totalSeconds * 1000
+  };
+  t.el = createTimerPillEl();
+  voiceTimers.push(t);
+  updateTimerHudVisibility();
+  renderTimerPill(t);
+  return t;
+}
+
+function pauseVoiceTimer(t) {
+  if (t.state !== "running") return;
+  t.remaining = Math.max(0, Math.round((t.endTime - Date.now()) / 1000));
+  t.state = "paused";
+  renderTimerPill(t);
+}
+
+function resumeVoiceTimer(t) {
+  if (t.state !== "paused" || t.remaining <= 0) return;
+  t.state = "running";
+  t.endTime = Date.now() + t.remaining * 1000;
+  renderTimerPill(t);
+}
+
+function resetVoiceTimer(t) {
+  t.remaining = t.total;
+  t.state = "running";
+  t.endTime = Date.now() + t.total * 1000;
+  renderTimerPill(t);
+}
+
+function deleteVoiceTimer(t) {
+  t.el.classList.add("leaving");
+  setTimeout(() => {
+    t.el.remove();
+    const idx = voiceTimers.indexOf(t);
+    if (idx > -1) voiceTimers.splice(idx, 1);
+    updateTimerHudVisibility();
+  }, 260);
+}
+
+function finishVoiceTimer(t) {
+  t.state = "finished";
+  t.remaining = 0;
+  renderTimerPill(t);
+  playChime();
+  showToast((t.name ? "Minuteur " + t.name : "Minuteur") + " terminé");
+  // Le minuteur reste visible un court instant une fois terminé, puis se retire seul.
+  setTimeout(() => deleteVoiceTimer(t), 4000);
+}
+
+setInterval(() => {
+  voiceTimers.forEach((t) => {
+    if (t.state !== "running") return;
+    const remaining = (t.endTime - Date.now()) / 1000;
+    if (remaining <= 0) finishVoiceTimer(t);
+    else { t.remaining = remaining; renderTimerPill(t); }
+  });
+}, 250);
+
+function findVoiceTimerTarget(name) {
+  if (!voiceTimers.length) return null;
+  if (name) {
+    const match = voiceTimers.find((t) => t.name && t.name.toLowerCase() === name.toLowerCase());
+    if (match) return match;
+  }
+  const running = voiceTimers.filter((t) => t.state === "running");
+  if (running.length) return running[running.length - 1];
+  return voiceTimers[voiceTimers.length - 1];
+}
+
+// --- Extraction de durée / nom / intention à partir du texte transcrit ---
+const TIMER_NUM_WORDS = {
+  "zéro": 0, "un": 1, "une": 1, "deux": 2, "trois": 3, "quatre": 4, "cinq": 5, "six": 6, "sept": 7,
+  "huit": 8, "neuf": 9, "dix": 10, "onze": 11, "douze": 12, "treize": 13, "quatorze": 14, "quinze": 15,
+  "seize": 16, "vingt": 20, "vingt-cinq": 25, "trente": 30, "quarante": 40, "quarante-cinq": 45,
+  "cinquante": 50, "soixante": 60
+};
+
+function normalizeTimerWords(text) {
+  let t = text;
+  Object.keys(TIMER_NUM_WORDS).sort((a, b) => b.length - a.length).forEach((word) => {
+    const re = new RegExp("\\b" + word + "\\b", "gi");
+    t = t.replace(re, TIMER_NUM_WORDS[word]);
+  });
+  return t;
+}
+
+function extractTimerDuration(rawText) {
+  let t = normalizeTimerWords(rawText);
+  let hours = 0, minutes = 0, seconds = 0, found = false;
+
+  const combo = t.match(/(\d+)\s*(?:minutes?|min)\b\s+(\d+)\b(?!\s*(?:heures?|h\b|minutes?|min\b|secondes?|sec\b))/i);
+  if (combo) {
+    minutes += parseInt(combo[1], 10);
+    seconds += parseInt(combo[2], 10);
+    found = true;
+    t = t.replace(combo[0], " ");
+  }
+  // \b après "heures?"/"minutes?"/"secondes?" (pas seulement après les abréviations) pour
+  // éviter qu'un nombre placé juste avant le mot "minuteur" (ex. "un minuteur" → "1 minuteur"
+  // une fois "un" normalisé) ne soit pris pour "1 minute" — "minuteur" commence par "minute".
+  const hMatch = t.match(/(\d+)\s*(?:heures?\b|h\b)/i);
+  if (hMatch) { hours += parseInt(hMatch[1], 10); found = true; t = t.replace(hMatch[0], " "); }
+  const mMatch = t.match(/(\d+)\s*(?:minutes?\b|min\b)/i);
+  if (mMatch) { minutes += parseInt(mMatch[1], 10); found = true; t = t.replace(mMatch[0], " "); }
+  const sMatch = t.match(/(\d+)\s*(?:secondes?\b|sec\b)/i);
+  if (sMatch) { seconds += parseInt(sMatch[1], 10); found = true; }
+
+  if (!found) return null;
+  return { hours, minutes, seconds, total: hours * 3600 + minutes * 60 + seconds };
+}
+
+function extractTimerName(text) {
+  let m = text.match(/appel[ée]e?\s+([a-zà-ÿ0-9\-]+(?:\s+[a-zà-ÿ0-9\-]+){0,2})/i);
+  if (m) return capitalizeTimerName(cleanTimerName(m[1]));
+  m = text.match(/nomm[ée]e?\s+([a-zà-ÿ0-9\-]+(?:\s+[a-zà-ÿ0-9\-]+){0,2})/i);
+  if (m) return capitalizeTimerName(cleanTimerName(m[1]));
+  m = text.match(/minuteur\s+(?:appel[ée]?\s+)?([a-zà-ÿ][a-zà-ÿ\-]{2,})\s+de\s+\d/i);
+  if (m && !/^(de|du|des|le|la|les|un|une)$/i.test(m[1])) return capitalizeTimerName(cleanTimerName(m[1]));
+  return null;
+}
+function cleanTimerName(s) { return s.replace(/\s+(de|d')\s*$/i, "").trim(); }
+function capitalizeTimerName(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+function detectTimerIntent(text) {
+  const t = text.toLowerCase();
+  if (/combien de temps|temps restant|reste-t-il|il reste combien/.test(t)) return "query";
+  if (/supprime|efface|enlève|retire|vire le minuteur/.test(t)) return "delete";
+  if (/réinitialise|remise à zéro|remets à zéro/.test(t)) return "reset";
+  if (/\bpause\b|mets.*pause|stoppe|arrête/.test(t)) return "pause";
+  if (/reprend|repars|relance|continue/.test(t)) return "resume";
+  return "create";
+}
+
+// N'engage l'analyse "commande minuteur" que si la phrase mentionne
+// explicitement un minuteur/chrono : le reste de la transcription libre
+// n'est jamais traité comme une commande.
+function maybeHandleTimerCommand(rawText) {
+  const text = rawText.trim();
+  if (!text || !/minuteur|chrono/i.test(text)) return;
+
+  const intent = detectTimerIntent(text);
+  const name = extractTimerName(text);
+  const duration = extractTimerDuration(text);
+
+  if (intent === "query") {
+    const target = findVoiceTimerTarget(name);
+    if (!target) { showToast("Aucun minuteur actif pour l'instant"); return; }
+    const msg = "Il reste " + fmtTimer(target.remaining) + (target.name ? " sur " + target.name : "");
+    showToast(msg);
+    speakTimerFeedback(msg.replace(":", " minutes "));
+    return;
+  }
+  if (intent === "delete") {
+    const target = findVoiceTimerTarget(name);
+    if (!target) { showToast("Aucun minuteur à supprimer"); return; }
+    deleteVoiceTimer(target);
+    showToast("Minuteur supprimé");
+    return;
+  }
+  if (intent === "reset") {
+    const target = findVoiceTimerTarget(name);
+    if (!target) { showToast("Aucun minuteur à réinitialiser"); return; }
+    resetVoiceTimer(target);
+    showToast("Minuteur réinitialisé");
+    return;
+  }
+  if (intent === "pause") {
+    const target = findVoiceTimerTarget(name);
+    if (!target) { showToast("Aucun minuteur en cours"); return; }
+    pauseVoiceTimer(target);
+    showToast((target.name ? "Minuteur " + target.name : "Minuteur") + " mis en pause");
+    return;
+  }
+  if (intent === "resume") {
+    const target = findVoiceTimerTarget(name);
+    if (!target) { showToast("Aucun minuteur à relancer"); return; }
+    resumeVoiceTimer(target);
+    showToast((target.name ? "Minuteur " + target.name : "Minuteur") + " relancé");
+    return;
+  }
+  // Par défaut : créer un nouveau minuteur si une durée a été comprise dans la phrase.
+  if (duration && duration.total > 0) {
+    createVoiceTimer(duration.total, name);
+    showToast((name ? "Minuteur " + name : "Minuteur") + " créé · " + fmtTimer(duration.total));
+  } else {
+    showToast("Je n'ai pas compris la durée du minuteur");
+  }
+}
+
+/* ============================================================
+   9. ATTENTION / CURSEUR / SOURIS
+   ============================================================ */
+function setAttentive(value) {
+  STATE.attentive = value;
+  dom.stage.dataset.attentive = String(value);
+  if (!value) {
+    clearDwell();
+  }
+}
+
+// Point "curseur" violet qui suit la souris. Togglable dans les réglages
+// (CONFIG.showGazeCursor), indépendant du mode debug.
+function updateGazeCursor(px, py) {
+  const visible = CONFIG.showGazeCursor;
+  dom.gazeDot.classList.toggle("is-visible", visible);
+  if (visible) {
+    dom.gazeDot.style.transform = `translate(${px}px, ${py}px)`;
+  }
+}
+
+function updateDebugOverlay(data) {
+  dom.debugPanel.style.display = "block";
+  dom.gazeDot.classList.add("is-debug-detail");
+  dom.debugPanel.textContent =
+    `x: ${data.x.toFixed(2)}  y: ${data.y.toFixed(2)}\n` +
+    `zone: ${data.zone}\n` +
+    `état: ${data.attentive ? "ATTENTIVE" : "NOT_ATTENTIVE"}`;
+}
+
+function hideDebugOverlay() {
+  dom.debugPanel.style.display = "none";
+  dom.gazeDot.classList.remove("is-debug-detail");
+}
+
+// --- La souris pilote entièrement le curseur / dwell-click ---
+function setupMouseFallback() {
+  window.addEventListener("mousemove", (e) => {
+    STATE.mouseGaze.x = e.clientX / window.innerWidth;
+    STATE.mouseGaze.y = e.clientY / window.innerHeight;
+    STATE.mouseInside = true;
+  });
+  window.addEventListener("mouseleave", () => (STATE.mouseInside = false));
+  window.addEventListener("mouseenter", () => (STATE.mouseInside = true));
+}
+
+// Boucle continue : tourne en permanence dès le chargement de la page (le suivi du
+// regard par caméra ayant été retiré, la souris est désormais le seul pilote).
+function mouseLoop() {
+  STATE.rafId = requestAnimationFrame(mouseLoop);
+  setAttentive(STATE.mouseInside);
+  if (STATE.mouseInside) {
+    updateInteraction(STATE.mouseGaze.x, STATE.mouseGaze.y, true);
+    if (CONFIG.debug) {
+      updateDebugOverlay({
+        x: STATE.mouseGaze.x, y: STATE.mouseGaze.y,
+        zone: classifyZone(STATE.mouseGaze.x, STATE.mouseGaze.y),
+        attentive: true
+      });
+    }
+  }
+}
+
+/* ============================================================
+   10. DÉMARRAGE / GESTION DE LA PERMISSION CAMÉRA + MICRO
+   ============================================================ */
+async function startExperience() {
+  dom.btnEnableCamera.disabled = true;
+  dom.permissionStatus.textContent = "Ouverture de la caméra et du micro…";
+
+  try {
+    await startCamera();
+  } catch (err) {
+    console.warn("[eye-ui] caméra/micro refusé ou indisponible", err);
+    dom.permissionOverlay.hidden = true;
+    showToast("Caméra/micro indisponible : l'interface reste utilisable avec la souris.", 4500);
+    dom.btnEnableCamera.disabled = false;
+    return;
+  }
+
+  // La voix (orbe réactif + transcription) démarre dès que le flux micro est prêt.
+  setupVoiceAnalysis(STATE.stream);
+  if (CONFIG.voiceEnabled) startTranscription();
+
+  dom.permissionOverlay.hidden = true;
+  dom.toggleCamera.checked = true;
+  dom.btnEnableCamera.disabled = false;
+}
+
+/* ============================================================
+   RÉGLAGES (panneau "•••")
+   ============================================================ */
+function setupSettingsPanel() {
+  dom.menuBtn.addEventListener("click", () => {
+    const willShow = dom.settingsPanel.hidden;
+    dom.settingsPanel.hidden = !willShow;
+    dom.menuBtn.setAttribute("aria-expanded", String(willShow));
+  });
+  dom.btnCloseSettings.addEventListener("click", () => {
+    dom.settingsPanel.hidden = true;
+    dom.menuBtn.setAttribute("aria-expanded", "false");
+  });
+  dom.toggleCamera.addEventListener("change", async (e) => {
+    if (e.target.checked) {
+      try {
+        await startCamera();
+        setupVoiceAnalysis(STATE.stream);
+        if (CONFIG.voiceEnabled) startTranscription();
+        dom.permissionOverlay.hidden = true;
+        showToast("Caméra activée.");
+      } catch (err) {
+        console.warn(err);
+        showToast("Caméra/micro refusé ou indisponible.");
+        e.target.checked = false;
+      }
+    } else {
+      stopCamera();
+      showToast("Caméra désactivée.");
+    }
+  });
+  dom.toggleDebug.addEventListener("change", (e) => {
+    CONFIG.debug = e.target.checked;
+    if (!CONFIG.debug) hideDebugOverlay();
+  });
+  dom.toggleGazeCursor.addEventListener("change", (e) => {
+    CONFIG.showGazeCursor = e.target.checked;
+    if (!CONFIG.showGazeCursor) dom.gazeDot.classList.remove("is-visible");
+  });
+  dom.toggleVoice.addEventListener("change", (e) => {
+    CONFIG.voiceEnabled = e.target.checked;
+    if (e.target.checked) {
+      if (STATE.voiceActive) startTranscription();
+      else showToast("Active la caméra + micro pour utiliser la transcription.");
+    } else {
+      stopTranscription();
+    }
+  });
+}
+
+/* ============================================================
+   ACCESSIBILITÉ : clic / clavier en plus du dwell
+   Chaque cible reste un vrai <button>, donc accessible au clavier
+   (Tab + Entrée/Espace) et à la souris, indépendamment du dwell-click.
+   ============================================================ */
+function setupGazeTargets() {
+  gazeTargets.forEach((el) => {
+    el.addEventListener("click", () => activate(el));
+  });
+}
+
+/* ============================================================
+   PRÉFÉRENCES SYSTÈME : mouvement réduit
+   ============================================================ */
+function setupReducedMotion() {
+  const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const apply = () => {
+    STATE.reducedMotion = mq.matches;
+    document.documentElement.classList.toggle("reduced-motion", mq.matches);
+  };
+  apply();
+  mq.addEventListener("change", apply);
+}
+
+/* ============================================================
+   EVENT HANDLERS — câblage de l'overlay de démarrage
+   ============================================================ */
+dom.btnEnableCamera.addEventListener("click", startExperience);
+dom.btnUseMouse.addEventListener("click", () => {
+  dom.permissionOverlay.hidden = true;
+});
+
+const handleResize = debounce(() => {
+  // Les positions du dwell sont recalculées à la volée (getBoundingClientRect à
+  // chaque frame), donc rien à faire ici hormis redimensionner le canvas de
+  // l'orbe et re-mesurer la hauteur du prompteur (2 lignes).
+  resizeOrbCanvas();
+  measureTeleprompter();
+  updateTeleprompterScroll(false);
+  cleanupOldWords();
+}, 150);
+window.addEventListener("resize", handleResize);
+
+// Nettoyage propre de la caméra si l'onglet est fermé (bonnes pratiques vie privée)
+window.addEventListener("beforeunload", stopCamera);
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+function boot() {
+  setupReducedMotion();
+  setupGazeTargets();
+  setupSettingsPanel();
+  setupMouseFallback();
+
+  // Etat initial : interface visible en attendant la décision de l'utilisateur
+  dom.stage.dataset.attentive = "true";
+
+  // Prompteur : dimensionne la scène (2 lignes). Reste vide tant que rien n'a
+  // été dit — plus aucune phrase de démo n'est affichée par défaut ; seule la
+  // transcription vocale réelle alimente ce bloc (voir recognition.onresult).
+  measureTeleprompter();
+  updateTeleprompterScroll(false);
+
+  // Orbe : dimensionne le canvas et démarre sa boucle d'animation continue
+  // (respiration à vide tant que le micro n'est pas actif).
+  resizeOrbCanvas();
+  orbLoop();
+
+  // Curseur/dwell : tourne en permanence, piloté par la souris.
+  mouseLoop();
+
+  if (!SpeechRecognitionImpl) {
+    dom.toggleVoice.disabled = true;
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    dom.permissionStatus.textContent = "Caméra non supportée par ce navigateur.";
+    dom.btnEnableCamera.disabled = true;
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

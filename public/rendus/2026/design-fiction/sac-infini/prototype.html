@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>SAC∞ — Contrôle par la main</title>
+<style>
+  :root{
+    --panel: rgba(20,20,22,.30);
+    --card: rgba(255,255,255,.08);
+    --card-hi: rgba(255,255,255,.17);
+    --ink: #f4f4ef;
+    --muted: #a1a29a;
+    --accent: #b8ff3d;
+    --accent-ink: #0a0a0b;
+    --line: rgba(255,255,255,.12);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%; overflow:hidden;}
+  body{
+    background:transparent;
+    font-family:"Helvetica Neue", Arial, sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- live camera feed as background ---------- */
+  #video-bg{
+    position:fixed; inset:0; z-index:0; overflow:hidden; background:#050506;
+  }
+  #video-bg video{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+    transform:scaleX(-1);
+    filter:saturate(1.08) contrast(1.03) brightness(.92);
+  }
+
+  /* ---------- color wash + blobs, sits over the video (still see-through) ---------- */
+  #bg-scene{
+    position:fixed; inset:0; z-index:1; overflow:hidden; pointer-events:none;
+    background:
+      radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,.35) 0, transparent 60%),
+      radial-gradient(1px 1px at 70% 65%, rgba(255,255,255,.25) 0, transparent 60%),
+      radial-gradient(1px 1px at 85% 20%, rgba(255,255,255,.3) 0, transparent 60%),
+      linear-gradient(180deg, rgba(8,9,10,.32) 0%, rgba(8,9,10,.5) 100%);
+    transition:background .4s ease;
+  }
+  /* fallback look when the camera is unavailable: hide the empty video feed */
+  body.no-camera #bg-scene{
+    background:
+      radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,.35) 0, transparent 60%),
+      radial-gradient(1px 1px at 70% 65%, rgba(255,255,255,.25) 0, transparent 60%),
+      radial-gradient(1px 1px at 85% 20%, rgba(255,255,255,.3) 0, transparent 60%),
+      radial-gradient(120% 120% at 20% 10%, #1c1e20 0%, #121314 55%, #0b0c0d 100%);
+  }
+  #bg-scene .blob{position:absolute; border-radius:50%; filter:blur(120px); mix-blend-mode:screen; will-change:transform;}
+  #bg-scene .b1{width:50vw; height:50vw; left:-12vw; top:-16vw; background:radial-gradient(circle, rgba(184,255,61,.34), rgba(184,255,61,0) 70%); animation:drift1 28s ease-in-out infinite;}
+  #bg-scene .b2{width:46vw; height:46vw; right:-12vw; bottom:-14vw; background:radial-gradient(circle, rgba(120,140,255,.20), rgba(120,140,255,0) 70%); animation:drift2 34s ease-in-out infinite;}
+  #bg-scene .b3{width:36vw; height:36vw; left:40vw; top:44vw; background:radial-gradient(circle, rgba(184,255,61,.16), rgba(184,255,61,0) 70%); animation:drift3 24s ease-in-out infinite;}
+  @keyframes drift1{0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(6vw,4vw) scale(1.08);}}
+  @keyframes drift2{0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(-5vw,-6vw) scale(1.1);}}
+  @keyframes drift3{0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(-4vw,3vw) scale(.94);}}
+
+  /* ---------- floating glass app panel — sits over the live camera feed ---------- */
+  #app{
+    position:fixed; inset:22px; z-index:2;
+    border-radius:28px; overflow:hidden;
+    background:var(--panel);
+    backdrop-filter:blur(30px) saturate(150%);
+    -webkit-backdrop-filter:blur(30px) saturate(150%);
+    border:1px solid rgba(255,255,255,.09);
+    box-shadow:0 50px 110px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.05) inset;
+    display:flex; flex-direction:column;
+  }
+
+  /* ================= LOGO + CENTERED NAV ================= */
+  #tabbar{
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    padding:18px 30px 0; flex-shrink:0; position:relative; z-index:5;
+  }
+  .app-logo{
+    display:flex; align-items:baseline; gap:6px; user-select:none;
+  }
+  .app-logo .word{font-size:15px; font-weight:800; letter-spacing:.28em; text-transform:uppercase; color:var(--ink);}
+  .app-logo .infinity{font-size:15px; font-weight:800; color:var(--accent);}
+  .nav-row{display:grid; grid-template-columns:1fr auto 1fr; align-items:center; gap:14px; width:100%;}
+  .back-btn{
+    justify-self:start;
+    width:58px; height:58px; border-radius:50%; border:1px solid var(--line);
+    background:rgba(255,255,255,.05); color:var(--ink); font-size:23px; font-weight:800;
+    display:flex; align-items:center; justify-content:center; touch-action:none; flex-shrink:0;
+    transition:opacity .18s, background .15s, border-color .15s; cursor:pointer;
+  }
+  .back-btn.disabled{opacity:0; pointer-events:none;}
+  .back-btn.hover-target{background:rgba(184,255,61,.16); border-color:var(--accent);}
+
+  /* ---- accès unique Catégorie ↔ Objet (breadcrumb-pill) ---- */
+  .browse-pill{
+    justify-self:center;
+    display:flex; align-items:center; gap:13px;
+    border:1px solid var(--line); background:rgba(255,255,255,.05); color:var(--ink);
+    padding:12px 24px 12px 15px; border-radius:999px; touch-action:none; cursor:pointer;
+    transition:background .15s, color .15s, box-shadow .15s, border-color .15s;
+    max-width:min(58vw, 360px);
+  }
+  .browse-pill .icon-wrap{width:32px; height:32px; flex-shrink:0;}
+  .browse-pill .icon-wrap svg{width:100%; height:100%; stroke:currentColor; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
+  .browse-pill .browse-label{font-size:17px; font-weight:700; letter-spacing:.1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .browse-pill .browse-count{
+    background:rgba(255,255,255,.14); color:var(--ink); font-size:12.5px; font-weight:800;
+    border-radius:999px; padding:3px 9px; min-width:20px; text-align:center; flex-shrink:0;
+    font-family:ui-monospace,Menlo,monospace;
+  }
+  .browse-pill.active{background:var(--accent); color:var(--accent-ink);}
+  .browse-pill.active .browse-count{background:rgba(10,10,11,.16); color:var(--accent-ink);}
+  .browse-pill.hover-target{box-shadow:0 0 0 3px rgba(184,255,61,.35);}
+
+  /* ---- panier / historique : accès à part, hors du fil catégorie→objet ---- */
+  .side-actions{justify-self:end; display:flex; align-items:center; gap:12px; padding-left:14px; margin-left:2px; border-left:1px solid var(--line); flex-shrink:0;}
+  .icon-btn{
+    position:relative; width:58px; height:58px; border-radius:50%;
+    border:1px solid var(--line); background:rgba(255,255,255,.05);
+    display:flex; align-items:center; justify-content:center; touch-action:none; cursor:pointer;
+    transition:background .15s, border-color .15s, box-shadow .15s;
+  }
+  .icon-btn svg{width:26px; height:26px; stroke:var(--ink); fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round;}
+  .icon-btn .badge{
+    position:absolute; top:-6px; right:-6px; min-width:22px; height:22px; padding:0 5px;
+    border-radius:999px; background:var(--accent); color:var(--accent-ink);
+    font-size:11.5px; font-weight:800; display:flex; align-items:center; justify-content:center;
+    font-family:ui-monospace,Menlo,monospace; line-height:1;
+  }
+  .icon-btn.active{background:var(--accent); border-color:var(--accent);}
+  .icon-btn.active svg{stroke:var(--accent-ink);}
+  .icon-btn.active .badge{background:rgba(10,10,11,.18); color:var(--accent-ink);}
+  .icon-btn.hover-target{box-shadow:0 0 0 3px rgba(184,255,61,.35);}
+
+  /* ================= SCREENS ================= */
+  .screen{
+    position:absolute; left:0; right:0; top:0; bottom:0;
+    display:flex; flex-direction:column;
+    padding:14px 34px 26px;
+    opacity:0; pointer-events:none;
+    transform:translateY(10px);
+    transition:opacity .28s ease, transform .28s ease;
+  }
+  .screen.active{opacity:1; pointer-events:auto; transform:translateY(0);}
+  #screens-wrap{position:relative; flex:1; min-height:0; margin-top:8px;}
+
+  .header-row{display:flex; align-items:flex-end; justify-content:space-between; margin:8px 0 16px;}
+  .header-row h1{font-size:30px; font-weight:800; letter-spacing:-1px;}
+  .header-row .count-label{font-size:12px; color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.08em; font-family:ui-monospace,Menlo,monospace;}
+  .hint-text{font-size:12px; color:var(--muted); max-width:640px; line-height:1.5; margin-top:14px; flex-shrink:0; text-align:center; align-self:center;}
+
+  /* ================= GRIDS ================= */
+  #cat-grid, #object-grid, #history-grid{
+    flex:1; display:grid; gap:14px; min-height:0; align-content:stretch;
+  }
+  .tile{
+    background:var(--card); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border:1px solid var(--line);
+    border-radius:18px; padding:16px 14px 14px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+    position:relative; cursor:pointer;
+    transition:box-shadow .12s ease, background .12s ease, border-color .12s ease;
+    touch-action:none; user-select:none;
+  }
+  .tile .qty-badge{
+    position:absolute; top:12px; right:12px; font-size:10.5px; font-weight:800; color:var(--accent-ink);
+    background:var(--accent); border-radius:999px; padding:2px 7px; font-family:ui-monospace,Menlo,monospace;
+  }
+  .tile .icon-wrap{width:44px; height:44px; display:flex; align-items:center; justify-content:center;}
+  .tile .icon-wrap svg{width:100%; height:100%; stroke:var(--ink); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
+  .tile .label{font-size:13.5px; font-weight:700; text-align:center;}
+  .tile .sub{font-size:10.5px; color:var(--muted); font-weight:600;}
+  .tile.hover-target{background:var(--card-hi); border-color:var(--accent); box-shadow:0 0 0 2px rgba(184,255,61,.3);}
+  .tile.dragging{opacity:.28;}
+  .tile.flash{animation:flashTile 1s ease;}
+  @keyframes flashTile{0%,100%{box-shadow:none;} 30%{box-shadow:0 0 0 3px var(--accent);}}
+  .tile.history-tile .sub{color:var(--accent); font-weight:800;}
+
+  /* ================= PANIER ================= */
+  .cart-title-row{display:flex; align-items:baseline; justify-content:space-between; margin:8px 0 6px;}
+  .cart-title-row h1{font-size:30px; font-weight:800; letter-spacing:-1px;}
+  .cart-main{flex:1; display:flex; gap:34px; min-height:0;}
+  .cart-stage{
+    flex:1.15; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    position:relative;
+  }
+  .stage-icon-wrap{
+    width:190px; height:190px; border-radius:50%;
+    background:radial-gradient(circle at 42% 38%, var(--card-hi), var(--card) 72%);
+    border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 30px 60px rgba(0,0,0,.4);
+    transition:transform .25s ease, box-shadow .25s ease, opacity .4s ease;
+  }
+  .stage-icon-wrap.materialized{transform:scale(1.06); box-shadow:0 0 0 3px rgba(184,255,61,.4), 0 30px 60px rgba(0,0,0,.4);}
+  .stage-icon-wrap svg{width:88px; height:88px; stroke:var(--ink); fill:none; stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round;}
+  .stage-controls{margin-top:28px; display:flex; flex-direction:column; align-items:center; gap:14px; width:min(340px, 90%);}
+  .ring-wrap{position:relative; width:66px; height:66px; display:flex; align-items:center; justify-content:center;}
+  .ring-wrap svg{position:absolute; inset:0; transform:rotate(-90deg);}
+  .ring-label{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:14px; font-weight:800; color:var(--accent); font-family:ui-monospace,Menlo,monospace;
+    line-height:1; text-align:center;
+  }
+  #gen-btn{
+    width:100%; border:1px solid var(--line); border-radius:14px; padding:15px; background:var(--card);
+    color:var(--ink); font-weight:800; font-size:13.5px; touch-action:none; cursor:pointer;
+    transition:background .15s, border-color .15s;
+  }
+  #gen-btn.hover-target{background:rgba(184,255,61,.14); border-color:var(--accent);}
+  #gen-btn.done{color:var(--accent);}
+  #gen-btn:disabled{opacity:.5;}
+  .gen-note{font-size:11px; color:var(--muted); text-align:center; min-height:14px;}
+
+  .cart-list{flex:1; display:flex; flex-direction:column; min-height:0;}
+  .cart-list h2{font-size:11px; font-weight:800; color:var(--muted); letter-spacing:.1em; margin-bottom:10px; text-transform:uppercase;}
+  #cart-list-wrap{flex:1; display:grid; gap:9px; align-content:start; grid-auto-rows:min-content; min-height:0;}
+  .cart-row{
+    display:flex; align-items:center; gap:11px; padding:12px 13px;
+    background:var(--card); border:1px solid var(--line); border-radius:12px; touch-action:none; user-select:none;
+    cursor:pointer; transition:background .15s, border-color .15s, box-shadow .15s;
+  }
+  .cart-row.selected{border-color:var(--accent); box-shadow:0 0 0 2px rgba(184,255,61,.25);}
+  .cart-row.hover-target{background:var(--card-hi);}
+  .cart-row .icon-wrap{width:26px; height:26px; flex-shrink:0;}
+  .cart-row .icon-wrap svg{width:100%; height:100%; stroke:var(--ink); fill:none; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round;}
+  .cart-row .name{flex:1; font-size:13px; font-weight:700; display:flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0;}
+  .cart-row .qty-badge{font-size:10px; font-weight:800; color:var(--accent); background:rgba(184,255,61,.14); border-radius:999px; padding:1px 7px; font-family:ui-monospace,Menlo,monospace; flex-shrink:0;}
+  .cart-row .name .gen-tag{font-size:9.5px; font-weight:800; color:var(--accent-ink); background:var(--accent); border-radius:999px; padding:2px 8px; text-transform:uppercase; letter-spacing:.05em;}
+  .cart-row .remove{
+    width:21px; height:21px; border-radius:50%; background:rgba(255,255,255,.08); color:var(--muted);
+    display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; cursor:pointer;
+  }
+  .cart-row .remove.hover-target{background:#ff5a4e; color:#fff;}
+  #cart-empty, #history-empty{color:var(--muted); font-size:13px; line-height:1.6; max-width:280px; margin:auto; text-align:center;}
+
+  .history-tile .when{font-size:9.5px; color:var(--muted); font-family:ui-monospace,Menlo,monospace;}
+
+  /* ---------- ghost drag element ---------- */
+  #ghost{
+    position:fixed; z-index:9997; pointer-events:none; opacity:0;
+    width:64px; height:64px; border-radius:16px;
+    background:var(--card-hi); border:1px solid var(--accent);
+    display:flex; align-items:center; justify-content:center;
+    transform:translate(-50%,-50%) scale(1); transition:opacity .12s;
+    box-shadow:0 20px 40px rgba(0,0,0,.4);
+  }
+  #ghost svg{width:34px; height:34px; stroke:var(--ink); fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round;}
+  #ghost.show{opacity:.94;}
+
+  /* ---------- hand cursor ---------- */
+  #cursor{position:fixed; width:42px; height:42px; transform:translate(-50%,-50%); pointer-events:none; z-index:9999; top:-100px; left:-100px; opacity:0; transition:opacity .2s;}
+  #cursor svg{position:absolute; inset:0; transform:rotate(-90deg);}
+  #cursor-dot{position:absolute; left:50%; top:50%; width:10px; height:10px; margin:-5px; border-radius:50%; background:var(--accent); transition:width .1s, height .1s, margin .1s;}
+  #cursor.pinched #cursor-dot{width:16px; height:16px; margin:-8px; background:#fff;}
+
+  #status-dot{
+    position:fixed; left:22px; bottom:20px; width:9px; height:9px; border-radius:50%;
+    background:var(--muted); z-index:9998; transition:background .2s;
+  }
+  #status-dot.live{background:var(--accent); box-shadow:0 0 10px rgba(184,255,61,.6);}
+
+  #overlay{
+    position:fixed; inset:0; z-index:99999; background:#08090a; color:#fff;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; text-align:center; padding:30px;
+  }
+  #overlay h1{font-size:20px; font-weight:800; letter-spacing:-.4px;}
+  #overlay p{font-size:14px; color:#a3a49c; max-width:380px; line-height:1.5;}
+  #overlay button{background:var(--accent); color:var(--accent-ink); border:none; border-radius:999px; padding:12px 22px; font-weight:800; font-size:14px; cursor:pointer;}
+  .spinner{width:32px; height:32px; border-radius:50%; border:3px solid rgba(255,255,255,.15); border-top-color:var(--accent); animation:spin 1s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .hidden{display:none !important;}
+
+  /* ---------- reintegration modal ---------- */
+  #modal-backdrop{
+    position:fixed; inset:0; z-index:9996; background:rgba(6,7,7,.55);
+    display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none;
+    transition:opacity .2s;
+  }
+  #modal-backdrop.show{opacity:1; pointer-events:auto;}
+  #modal-box{
+    width:min(360px,86%); background:var(--panel); backdrop-filter:blur(40px) saturate(160%); -webkit-backdrop-filter:blur(40px) saturate(160%);
+    border:1px solid rgba(255,255,255,.14); border-radius:22px; padding:22px;
+    display:flex; flex-direction:column; gap:14px; transform:translateY(8px) scale(.98); transition:transform .2s;
+    box-shadow:0 40px 90px rgba(0,0,0,.5);
+  }
+  #modal-backdrop.show #modal-box{transform:translateY(0) scale(1);}
+  #modal-box .m-title{font-size:15px; font-weight:800;}
+  #modal-box .m-sub{font-size:12px; color:var(--muted); line-height:1.5;}
+  .m-btn{
+    border:1px solid var(--line); border-radius:14px; padding:14px; background:var(--card);
+    color:var(--ink); font-weight:700; font-size:13px; text-align:left; cursor:pointer; touch-action:none;
+    transition:background .15s, border-color .15s;
+  }
+  .m-btn.hover-target{background:rgba(184,255,61,.14); border-color:var(--accent);}
+  .m-btn .m-btn-icon{font-size:10.5px; color:var(--accent); font-weight:800; display:block; text-transform:uppercase; letter-spacing:.06em; margin-bottom:3px;}
+  .m-cancel{align-self:center; font-size:11.5px; color:var(--muted); background:none; border:none; padding:6px; cursor:pointer; touch-action:none;}
+  .m-cancel.hover-target{color:var(--ink);}
+
+  /* ---- sélecteur de quantité (modal d'ajout au panier) ---- */
+  .qty-modal-head{display:flex; align-items:center; gap:12px;}
+  .qty-modal-head .icon-wrap svg{width:100%; height:100%; stroke:var(--ink); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
+  .qty-stepper{display:flex; align-items:center; justify-content:center; gap:22px; padding:6px 0;}
+  #modal-qty-options{display:flex; flex-direction:column; gap:14px;}
+  #qty-confirm{width:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;}
+  #qty-confirm .m-btn-icon{text-align:center;}
+  .qty-step-btn{
+    width:46px; height:46px; border-radius:50%; border:1px solid var(--line); background:rgba(255,255,255,.08);
+    color:var(--ink); font-size:23px; font-weight:800; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; touch-action:none; transition:background .15s, border-color .15s, opacity .15s;
+  }
+  .qty-step-btn.hover-target{background:rgba(184,255,61,.18); border-color:var(--accent);}
+  .qty-step-btn:disabled{opacity:.3; pointer-events:none;}
+  .qty-value{min-width:52px; text-align:center; font-size:26px; font-weight:800; font-family:ui-monospace,Menlo,monospace;}
+
+  /* ---- ajustement de quantité directement dans le panier ---- */
+  .cart-qty-adjust{display:flex; align-items:center; gap:7px; flex-shrink:0;}
+  .cart-qty-btn{
+    width:26px; height:26px; border-radius:50%; border:1px solid var(--line); background:rgba(255,255,255,.08);
+    color:var(--ink); font-size:15px; font-weight:800; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; touch-action:none; transition:background .15s, border-color .15s, opacity .15s;
+  }
+  .cart-qty-btn.hover-target{background:rgba(184,255,61,.2); border-color:var(--accent);}
+  .cart-qty-btn.disabled{opacity:.3; pointer-events:none;}
+  .cart-qty-val{min-width:22px; text-align:center; font-size:12.5px; font-weight:800; font-family:ui-monospace,Menlo,monospace;}
+</style>
+</head>
+<body>
+
+<div id="video-bg">
+  <video id="cam-video" autoplay playsinline muted></video>
+</div>
+<div id="bg-scene">
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  <div class="blob b3"></div>
+</div>
+
+<div id="app">
+  <div id="tabbar">
+    <div class="app-logo"><span class="word">Sac infini</span><span class="infinity">∞</span></div>
+    <div class="nav-row">
+      <button class="back-btn disabled" id="back-btn" type="button">←</button>
+      <button class="browse-pill active" id="browse-pill" type="button">
+        <span class="icon-wrap" id="browse-pill-icon"></span>
+        <span class="browse-label" id="browse-pill-label">Catégories</span>
+        <span class="browse-count" id="browse-pill-count">0</span>
+      </button>
+      <div class="side-actions">
+        <button class="icon-btn" id="btn-cart" data-screen="cart" type="button" aria-label="Panier">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l-1.4 10.4a2 2 0 01-2 1.6H9.4a2 2 0 01-2-1.6z"/><path d="M9 8V6a3 3 0 016 0v2"/></svg>
+          <span class="badge" id="n-cart">0</span>
+        </button>
+        <button class="icon-btn" id="btn-history" data-screen="history" type="button" aria-label="Historique">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9 9 0 00-7.5 4"/><path d="M3 4v5h5"/><path d="M12 7v5l3.5 2"/></svg>
+          <span class="badge" id="n-hist">0</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screens-wrap">
+
+    <section class="screen active" id="screen-categories">
+      <div class="header-row">
+        <h1>Catégories</h1>
+        <span class="count-label" id="cat-count-label">0 catégories</span>
+      </div>
+      <div id="cat-grid"></div>
+      <p class="hint-text">Pincez pouce + index au-dessus d'une catégorie pour l'ouvrir.</p>
+    </section>
+
+    <section class="screen" id="screen-objects">
+      <div class="header-row">
+        <h1 id="obj-title">Objets</h1>
+        <span class="count-label" id="obj-count-label">0 objets</span>
+      </div>
+      <div id="object-grid"></div>
+      <p class="hint-text" id="obj-hint">Pincez un objet et glissez-le vers l'onglet « Panier », ou relâchez le pincement rapidement pour l'ajouter directement.</p>
+    </section>
+
+    <section class="screen" id="screen-cart">
+      <div class="cart-title-row">
+        <h1>Panier</h1>
+        <span class="count-label" id="cart-count-label">0 objets</span>
+      </div>
+      <div class="cart-main">
+        <div class="cart-stage">
+          <div class="stage-icon-wrap" id="stage-icon-wrap">
+            <div class="icon-wrap" id="stage-icon" style="width:88px;height:88px;"></div>
+          </div>
+          <div class="stage-controls">
+            <div class="ring-wrap">
+              <svg viewBox="0 0 66 66" id="stage-ring">
+                <circle cx="33" cy="33" r="28" stroke="rgba(255,255,255,.12)" stroke-width="4" fill="none"></circle>
+                <circle cx="33" cy="33" r="28" stroke="var(--accent)" stroke-width="4" fill="none"
+                  id="ring-progress" stroke-dasharray="175.9" stroke-dashoffset="175.9" stroke-linecap="round"></circle>
+              </svg>
+              <div class="ring-label" id="ring-label">3s</div>
+            </div>
+            <button id="gen-btn" type="button">Faire apparaître l'objet</button>
+            <div class="gen-note" id="gen-note"></div>
+          </div>
+        </div>
+        <div class="cart-list">
+          <h2 id="cart-list-title">Dans le sac</h2>
+          <div id="cart-list-wrap"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-history">
+      <div class="header-row">
+        <h1>Historique</h1>
+        <span class="count-label" id="hist-count-label">0 objets</span>
+      </div>
+      <div id="history-grid"></div>
+      <p class="hint-text">Pincez un objet de l'historique pour choisir où le remettre.</p>
+    </section>
+
+  </div>
+</div>
+
+<div id="ghost"></div>
+<div id="cursor" class="hidden">
+  <svg viewBox="0 0 42 42">
+    <circle cx="21" cy="21" r="18" stroke="rgba(255,255,255,.25)" stroke-width="2" fill="none"></circle>
+    <circle id="cursor-progress" cx="21" cy="21" r="18" stroke="var(--accent)" stroke-width="2" fill="none"
+      stroke-dasharray="113" stroke-dashoffset="113" stroke-linecap="round"></circle>
+  </svg>
+  <div id="cursor-dot"></div>
+</div>
+
+<div id="status-dot"></div>
+
+<div id="modal-backdrop">
+  <div id="modal-box">
+    <div class="qty-modal-head" id="modal-head">
+      <div class="icon-wrap hidden" id="modal-head-icon" style="width:38px;height:38px;"></div>
+      <div>
+        <div class="m-title" id="modal-title">Remettre l'objet</div>
+        <div class="m-sub" id="modal-sub">Que voulez-vous faire de cet objet ?</div>
+      </div>
+    </div>
+
+    <div id="modal-reintegrate-options">
+      <button class="m-btn" id="modal-opt-origin" type="button">
+        <span class="m-btn-icon">Option 1</span>
+        Placer dans la catégorie d'origine
+      </button>
+      <button class="m-btn" id="modal-opt-cart" type="button">
+        <span class="m-btn-icon">Option 2</span>
+        Remettre dans le panier
+      </button>
+    </div>
+
+    <div id="modal-qty-options" class="hidden">
+      <div class="qty-stepper">
+        <button class="qty-step-btn" id="qty-minus" type="button">−</button>
+        <div class="qty-value" id="qty-value">1</div>
+        <button class="qty-step-btn" id="qty-plus" type="button">+</button>
+      </div>
+      <button class="m-btn" id="qty-confirm" type="button">
+        <span class="m-btn-icon">Confirmer</span>
+        Ajouter au panier
+      </button>
+    </div>
+
+    <button class="m-cancel" id="modal-cancel" type="button">Annuler</button>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="spinner" id="overlay-spinner"></div>
+  <h1 id="overlay-title">Initialisation de la caméra…</h1>
+  <p id="overlay-text">SAC∞ a besoin d'accéder à votre webcam pour détecter votre main. Tout le traitement reste local, dans votre navigateur.</p>
+  <button id="overlay-btn" class="hidden" type="button">Autoriser la caméra</button>
+</div>
+
+<script type="module">
+/* ============================================================
+   ICONES — bibliothèque de traits simples (24x24, style ligne)
+   ============================================================ */
+const ICONS = {
+  notebook: '<rect x="5" y="3" width="14" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="13" y1="8" x2="16" y2="8"/><line x1="13" y1="12" x2="16" y2="12"/>',
+  pen: '<path d="M4 20l1-4L16 5l3 3L8 19l-4 1z"/><line x1="14" y1="7" x2="17" y2="10"/>',
+  wallet: '<rect x="3" y="7" width="18" height="12" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1"/>',
+  passport: '<rect x="6" y="3" width="12" height="18" rx="2"/><circle cx="12" cy="10" r="2.4"/><path d="M9 16h6"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M16 7l2 2"/><path d="M19 4l2 2"/>',
+  laptop: '<rect x="4" y="5" width="16" height="10" rx="1.5"/><path d="M2 19h20"/>',
+  phone: '<rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/>',
+  headphones: '<path d="M4 15v-3a8 8 0 0116 0v3"/><rect x="2.5" y="14" width="5" height="7" rx="2"/><rect x="16.5" y="14" width="5" height="7" rx="2"/>',
+  charger: '<rect x="9" y="2" width="6" height="9" rx="1"/><path d="M12 11v4"/><path d="M9 15h6l-2 7-4-4h4z"/>',
+  camera: '<rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.5" r="3.6"/><path d="M8 7l1.6-3h4.8L16 7"/>',
+  cactus: '<path d="M12 21V9"/><path d="M12 12H8a2 2 0 01-2-2V6"/><path d="M12 15h4a2 2 0 002-2V8"/><path d="M9 3.5A2.5 2.5 0 0112 3.5"/>',
+  monstera: '<path d="M12 21c0-9 5-13 8-14-1 6-3 9-8 10z"/><path d="M12 21c0-9-5-13-8-14 1 6 3 9 8 10z"/>',
+  pot: '<path d="M6 8h12l-1.5 12a2 2 0 01-2 2h-5a2 2 0 01-2-2z"/><path d="M4 8h16"/><path d="M9 8c0-3 1.5-5 3-5s3 2 3 5"/>',
+  wateringcan: '<path d="M3 12h11v6a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M14 13l6-4"/><path d="M17 6l3-1"/><circle cx="17.5" cy="9.5" r="1.6"/>',
+  chair: '<path d="M6 4v9a2 2 0 002 2h8a2 2 0 002-2V4"/><path d="M6 13v7"/><path d="M18 13v7"/><path d="M6 9h12"/>',
+  lamp: '<path d="M8 3h8l3 7H5z"/><path d="M12 10v8"/><path d="M8 21h8"/>',
+  stool: '<path d="M5 8h14l-2 12H7z"/><path d="M9 20l-1 2"/><path d="M15 20l1 2"/>',
+  shelf: '<rect x="4" y="3" width="16" height="18" rx="1.5"/><line x1="4" y1="10" x2="20" y2="10"/><line x1="4" y1="16" x2="20" y2="16"/>',
+  mug: '<path d="M5 5h11v10a4 4 0 01-4 4H9a4 4 0 01-4-4z"/><path d="M16 8h2a2.5 2.5 0 010 5h-2"/>',
+  plate: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>',
+  knife: '<path d="M6 4l12 12"/><path d="M13 3l8 8-3 3-8-8z"/><path d="M6 15l-3 3 3 3 3-3z"/>',
+  teapot: '<path d="M4 12h11a3 3 0 013 3v0a3 3 0 01-3 3H8a4 4 0 01-4-4z"/><path d="M4 12V8"/><path d="M2 9h4"/><path d="M9 9V6"/>',
+  tshirt: '<path d="M8 4L4 7l2 3 2-1v11h8V9l2 1 2-3-4-3-2 2h-4z"/>',
+  jacket: '<path d="M9 3L5 6v15h5V11l2 2 2-2v10h5V6l-4-3-3 3-3-3z"/>',
+  shoes: '<path d="M3 16h7l3-3 4 1a3 3 0 013 3v2H3z"/><path d="M3 16v-4l4-1"/>',
+  hat: '<path d="M4 15c1-5 4-8 8-8s7 3 8 8z"/><path d="M2 15h20"/><path d="M2 15c0 2 2 3 4 3h12c2 0 4-1 4-3"/>',
+  ball: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M4 9c4 2 12 2 16 0"/><path d="M4 15c4-2 12-2 16 0"/>',
+  dumbbell: '<rect x="9" y="9" width="6" height="6"/><rect x="3" y="7" width="3" height="10"/><rect x="18" y="7" width="3" height="10"/><line x1="6" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="18" y2="12"/>',
+  bike: '<circle cx="6" cy="17" r="3.4"/><circle cx="18" cy="17" r="3.4"/><path d="M6 17l4-9h5l3 9"/><path d="M10 8h4"/><path d="M14 8l3 5h-8"/>',
+  racket: '<ellipse cx="12" cy="8" rx="6" ry="7"/><path d="M12 15v7"/><path d="M9 22h6"/><path d="M8 4l8 8"/><path d="M16 4l-8 8"/>',
+  suitcase: '<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V5a2 2 0 012-2h2a2 2 0 012 2v3"/><line x1="3" y1="13" x2="21" y2="13"/>',
+  sunglasses: '<circle cx="7" cy="13" r="3.4"/><circle cx="17" cy="13" r="3.4"/><path d="M10.4 12h3.2"/><path d="M3.6 12L2 9"/><path d="M20.4 12L22 9"/>',
+  map: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14"/><path d="M15 6v14"/>',
+  backpack: '<path d="M8 21V9a4 4 0 018 0v12"/><rect x="6" y="9" width="12" height="12" rx="2"/><path d="M9 4h6v3H9z"/><line x1="9" y1="14" x2="15" y2="14"/>'
+};
+function iconSvg(key){
+  const inner = ICONS[key] || ICONS.notebook;
+  return `<svg viewBox="0 0 24 24">${inner}</svg>`;
+}
+
+/* ============================================================
+   CATALOGUE
+   ============================================================ */
+const CATALOG = [
+  { id:'papeterie', name:'Papeterie', icon:'notebook', items:[
+    { id:'carnet', name:'Carnet', icon:'notebook', quantity:1 },
+    { id:'stylo', name:'Stylo', icon:'pen', quantity:3 },
+    { id:'portefeuille', name:'Portefeuille', icon:'wallet', quantity:1 },
+    { id:'passeport', name:'Passeport', icon:'passport', quantity:1 },
+    { id:'cles', name:'Clés', icon:'key', quantity:2 },
+  ]},
+  { id:'appareils', name:'Appareils', icon:'laptop', items:[
+    { id:'ordinateur', name:'Ordinateur portable', icon:'laptop', quantity:1 },
+    { id:'telephone', name:'Téléphone', icon:'phone', quantity:1 },
+    { id:'ecouteurs', name:'Écouteurs', icon:'headphones', quantity:1 },
+    { id:'chargeur', name:'Chargeur', icon:'charger', quantity:2 },
+    { id:'appareilphoto', name:'Appareil photo', icon:'camera', quantity:1 },
+  ]},
+  { id:'plantes', name:'Plantes', icon:'monstera', items:[
+    { id:'cactus', name:'Cactus', icon:'cactus', quantity:1 },
+  ]},
+  { id:'mobilier', name:'Mobilier', icon:'chair', items:[
+    { id:'chaise', name:'Chaise', icon:'chair', quantity:1 },
+    { id:'lampe', name:'Lampe', icon:'lamp', quantity:1 },
+    { id:'tabouret', name:'Tabouret', icon:'stool', quantity:2 },
+    { id:'etagere', name:'Étagère', icon:'shelf', quantity:1 },
+  ]},
+  { id:'cuisine', name:'Cuisine', icon:'mug', items:[
+    { id:'tasse', name:'Tasse', icon:'mug', quantity:4 },
+    { id:'assiette', name:'Assiette', icon:'plate', quantity:6 },
+    { id:'couteau', name:'Couteau', icon:'knife', quantity:1 },
+    { id:'theiere', name:'Théière', icon:'teapot', quantity:1 },
+  ]},
+  { id:'vetements', name:'Vêtements', icon:'tshirt', items:[
+    { id:'tshirt', name:'T-shirt', icon:'tshirt', quantity:3 },
+    { id:'veste', name:'Veste', icon:'jacket', quantity:1 },
+    { id:'chaussures', name:'Chaussures', icon:'shoes', quantity:1 },
+    { id:'chapeau', name:'Chapeau', icon:'hat', quantity:1 },
+  ]},
+  { id:'sport', name:'Sport', icon:'ball', items:[
+    { id:'ballon', name:'Ballon', icon:'ball', quantity:1 },
+    { id:'halteres', name:'Haltères', icon:'dumbbell', quantity:2 },
+    { id:'velo', name:'Vélo', icon:'bike', quantity:1 },
+    { id:'raquette', name:'Raquette', icon:'racket', quantity:1 },
+  ]},
+  { id:'voyage', name:'Voyage', icon:'suitcase', items:[
+    { id:'valise', name:'Valise', icon:'suitcase', quantity:1 },
+    { id:'lunettes', name:'Lunettes de soleil', icon:'sunglasses', quantity:1 },
+    { id:'carte', name:'Carte', icon:'map', quantity:1 },
+    { id:'sacados', name:'Sac à dos', icon:'backpack', quantity:1 },
+  ]},
+];
+function findCategory(catId){ return CATALOG.find(c => c.id === catId); }
+function findItem(catId, itemId){
+  const cat = findCategory(catId);
+  return cat ? cat.items.find(i => i.id === itemId) : null;
+}
+
+/* ============================================================
+   ETAT DE L'APPLICATION
+   ============================================================ */
+let uid = 1;
+const state = {
+  navStack: ['categories'],
+  activeCategoryId: null,
+  cart: [],      // { uid, catId, itemId, name, icon, quantity, generating, done }
+  history: [],   // { uid, catId, itemId, name, icon, quantity, when }
+  selectedCartUid: null, // objet du panier choisi pour la prochaine matérialisation
+};
+
+function currentScreen(){ return state.navStack[state.navStack.length - 1]; }
+
+function pushScreen(name){
+  if(currentScreen() === name) { renderAll(); return; }
+  state.navStack.push(name);
+  renderAll();
+}
+function goBack(){
+  /* depuis un écran d'objets, on revient toujours aux catégories,
+     même si on y est arrivé via le pill après un détour panier/historique */
+  if(currentScreen() === 'objects'){ goToRoot('categories'); return; }
+  if(state.navStack.length > 1){
+    state.navStack.pop();
+    renderAll();
+  }
+}
+function goToRoot(name){
+  state.navStack = [name];
+  renderAll();
+}
+
+/* ============================================================
+   RENDU
+   ============================================================ */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+function gridCols(n){
+  if(n <= 1) return 1;
+  if(n <= 4) return 2;
+  if(n <= 9) return 3;
+  return 4;
+}
+
+function renderAll(){
+  const screen = currentScreen();
+  $$('.screen').forEach(s => s.classList.remove('active'));
+  const map = { categories:'#screen-categories', objects:'#screen-objects', cart:'#screen-cart', history:'#screen-history' };
+  $(map[screen]).classList.add('active');
+
+  $('#back-btn').classList.toggle('disabled', screen !== 'objects');
+  updateBrowsePill(screen);
+  $('#btn-cart').classList.toggle('active', screen === 'cart');
+  $('#btn-history').classList.toggle('active', screen === 'history');
+
+  renderCategories();
+  renderObjects();
+  renderCart();
+  renderHistory();
+  updateCounts();
+}
+
+/* le pill unique reflète soit "Catégories" (racine) soit la catégorie ouverte —
+   un seul accès pour catégorie + objet, plutôt que deux onglets distincts */
+function updateBrowsePill(screen){
+  const pill = $('#browse-pill');
+  const icon = $('#browse-pill-icon');
+  const label = $('#browse-pill-label');
+  const count = $('#browse-pill-count');
+  const cat = findCategory(state.activeCategoryId);
+
+  pill.classList.toggle('active', screen === 'categories' || screen === 'objects');
+
+  if(screen === 'objects' && cat){
+    icon.innerHTML = iconSvg(cat.icon);
+    label.textContent = cat.name;
+    count.textContent = cat.items.length;
+  } else {
+    icon.innerHTML = iconSvg('backpack');
+    label.textContent = 'Catégories';
+    count.textContent = CATALOG.length;
+  }
+}
+
+function updateCounts(){
+  const cat = findCategory(state.activeCategoryId);
+  $('#n-cart').textContent = state.cart.length;
+  $('#n-hist').textContent = state.history.length;
+  $('#cat-count-label').textContent = `${CATALOG.length} catégories`;
+  $('#obj-count-label').textContent = cat ? `${cat.items.length} objets` : '0 objet';
+  $('#cart-count-label').textContent = `${state.cart.length} objet${state.cart.length>1?'s':''}`;
+  $('#hist-count-label').textContent = `${state.history.length} objet${state.history.length>1?'s':''}`;
+}
+
+function renderCategories(){
+  const grid = $('#cat-grid');
+  grid.style.gridTemplateColumns = `repeat(${gridCols(CATALOG.length)}, 1fr)`;
+  grid.innerHTML = CATALOG.map(cat => `
+    <div class="tile" data-action="open-category" data-cat="${cat.id}">
+      <div class="icon-wrap">${iconSvg(cat.icon)}</div>
+      <div class="label">${cat.name}</div>
+      <div class="sub">${cat.items.length} objet${cat.items.length>1?'s':''}</div>
+    </div>
+  `).join('');
+}
+
+function renderObjects(){
+  const cat = findCategory(state.activeCategoryId);
+  const grid = $('#object-grid');
+  const title = $('#obj-title');
+  const hint = $('#obj-hint');
+  if(!cat){
+    title.textContent = 'Objets';
+    grid.innerHTML = `<div id="cart-empty" style="grid-column:1/-1;">Choisissez d'abord une catégorie depuis l'onglet « Catégories ».</div>`;
+    grid.style.gridTemplateColumns = '1fr';
+    return;
+  }
+  title.textContent = cat.name;
+  grid.style.gridTemplateColumns = `repeat(${gridCols(cat.items.length)}, 1fr)`;
+  const singleItem = cat.items.length === 1;
+  const hasMultiples = cat.items.some(i => i.quantity > 1);
+  hint.textContent = hasMultiples
+    ? "Pincez un objet pour l'ajouter au panier — s'il y a plusieurs exemplaires, vous choisirez la quantité."
+    : (singleItem
+      ? "Cette catégorie ne contient qu'un objet : pincez-le pour l'ajouter directement au panier."
+      : "Pincez un objet et glissez-le vers l'onglet « Panier », ou relâchez rapidement pour l'ajouter directement.");
+  grid.innerHTML = cat.items.map(item => `
+    <div class="tile" data-action="pick-item" data-cat="${cat.id}" data-item="${item.id}" data-draggable="true">
+      <span class="qty-badge">×${item.quantity}</span>
+      <div class="icon-wrap">${iconSvg(item.icon)}</div>
+      <div class="label">${item.name}</div>
+      <div class="sub">${item.quantity > 1 ? 'Choisir la quantité' : 'Ajout direct'}</div>
+    </div>
+  `).join('');
+}
+
+function renderCart(){
+  const wrap = $('#cart-list-wrap');
+  if(state.cart.length === 0){
+    wrap.innerHTML = `<div id="cart-empty">Le sac est vide. Choisissez un objet dans une catégorie pour commencer.</div>`;
+  } else {
+    wrap.innerHTML = state.cart.map(row => `
+      <div class="cart-row ${row.uid === state.selectedCartUid ? 'selected' : ''}" data-uid="${row.uid}" data-action="select-cart">
+        <div class="icon-wrap">${iconSvg(row.icon)}</div>
+        <div class="name">${row.name}${row.uid === state.selectedCartUid ? '<span class="gen-tag">À générer</span>' : ''}</div>
+        <div class="cart-qty-adjust">
+          <button type="button" class="cart-qty-btn ${row.quantity <= 1 ? 'disabled' : ''}" data-delta="-1" data-uid="${row.uid}">−</button>
+          <span class="cart-qty-val">×${row.quantity}</span>
+          <button type="button" class="cart-qty-btn" data-delta="1" data-uid="${row.uid}">+</button>
+        </div>
+        <div class="remove" data-action="remove-cart" data-uid="${row.uid}">✕</div>
+      </div>
+    `).join('');
+  }
+
+  /* l'objet ciblé pour la génération : celui choisi manuellement, sinon le premier du panier */
+  let focusItem = state.cart.find(r => r.uid === state.selectedCartUid) || null;
+  if(!focusItem) focusItem = state.cart[0] || null;
+  state.selectedCartUid = focusItem ? focusItem.uid : null;
+
+  const stageIcon = $('#stage-icon');
+  const genBtn = $('#gen-btn');
+  const genNote = $('#gen-note');
+  const cartListTitle = $('#cart-list-title');
+  cartListTitle.textContent = `Dans le sac (${state.cart.length})`;
+
+  if(!genState.running){
+    if(focusItem){
+      stageIcon.innerHTML = iconSvg(focusItem.icon);
+      genBtn.disabled = false;
+      genBtn.classList.remove('done');
+      genBtn.textContent = "Faire apparaître l'objet";
+      genNote.textContent = state.cart.length > 1
+        ? `Sélectionné : ${focusItem.name} (×${focusItem.quantity}) — touchez un autre objet du panier pour changer.`
+        : `Prochain objet : ${focusItem.name} (×${focusItem.quantity})`;
+    } else {
+      stageIcon.innerHTML = iconSvg('backpack');
+      genBtn.disabled = true;
+      genBtn.classList.remove('done');
+      genBtn.textContent = "Faire apparaître l'objet";
+      genNote.textContent = 'Ajoutez un objet au panier pour commencer.';
+    }
+    resetRing();
+  }
+}
+
+function renderHistory(){
+  const grid = $('#history-grid');
+  if(state.history.length === 0){
+    grid.style.gridTemplateColumns = '1fr';
+    grid.innerHTML = `<div id="history-empty">Aucun objet matérialisé pour le moment. Les objets générés depuis le panier apparaîtront ici.</div>`;
+    return;
+  }
+  grid.style.gridTemplateColumns = `repeat(${gridCols(state.history.length)}, 1fr)`;
+  grid.innerHTML = state.history.slice().reverse().map(row => `
+    <div class="tile history-tile" data-action="reintegrate" data-uid="${row.uid}">
+      <span class="qty-badge">×${row.quantity}</span>
+      <div class="icon-wrap">${iconSvg(row.icon)}</div>
+      <div class="label">${row.name}</div>
+      <div class="sub">Matérialisé</div>
+      <div class="when">${row.when}</div>
+    </div>
+  `).join('');
+}
+
+/* ============================================================
+   ACTIONS
+   ============================================================ */
+function openCategory(catId){
+  state.activeCategoryId = catId;
+  pushScreen('objects');
+}
+
+function addItemToCart(catId, itemId, qty){
+  const item = findItem(catId, itemId);
+  if(!item) return;
+  const addQty = Math.max(1, qty || 1); // SAC∞ : aucune limite supérieure
+  const existing = state.cart.find(r => r.catId === catId && r.itemId === itemId);
+  if(existing){
+    existing.quantity = existing.quantity + addQty;
+    existing.maxQuantity = item.quantity;
+  } else {
+    state.cart.push({
+      uid: uid++, catId, itemId,
+      name:item.name, icon:item.icon, quantity:addQty, maxQuantity:item.quantity,
+      generating:false, done:false
+    });
+  }
+  renderCart();
+  updateCounts();
+}
+
+function pickItem(catId, itemId){
+  const item = findItem(catId, itemId);
+  if(!item) return;
+  if(item.quantity > 1){
+    openQuantityModal(catId, itemId);
+    return;
+  }
+  const cat = findCategory(catId);
+  addItemToCart(catId, itemId, 1);
+  if(cat && cat.items.length === 1){
+    flashTile(`.tile[data-action="pick-item"][data-item="${itemId}"]`);
+  }
+}
+
+function flashTile(sel){
+  const el = document.querySelector(sel);
+  if(el){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+}
+
+function removeFromCart(rowUid){
+  state.cart = state.cart.filter(r => r.uid !== rowUid);
+  if(state.selectedCartUid === rowUid) state.selectedCartUid = null;
+  renderCart();
+  updateCounts();
+}
+
+function selectCartItem(rowUid){
+  if(genState.running) return; // on ne change pas la cible pendant une matérialisation en cours
+  if(!state.cart.find(r => r.uid === rowUid)) return;
+  state.selectedCartUid = rowUid;
+  renderCart();
+}
+
+function adjustCartQty(rowUid, delta){
+  const row = state.cart.find(r => r.uid === rowUid);
+  if(!row) return;
+  const next = row.quantity + delta; // SAC∞ : aucune limite supérieure
+  if(next < 1) return;
+  row.quantity = next;
+  renderCart();
+}
+
+function nowLabel(){
+  const d = new Date();
+  return d.toLocaleTimeString('fr-FR', { hour:'2-digit', minute:'2-digit' });
+}
+
+function moveCartItemToHistory(row){
+  state.cart = state.cart.filter(r => r.uid !== row.uid);
+  state.history.push({
+    uid: uid++, catId:row.catId, itemId:row.itemId,
+    name:row.name, icon:row.icon, quantity:row.quantity, when: nowLabel()
+  });
+  renderCart();
+  renderHistory();
+  updateCounts();
+}
+
+/* ---------- génération (compte à rebours 3s) ---------- */
+const RING_R = 28;
+const RING_C = 2 * Math.PI * RING_R;
+const genState = { running:false, remaining:3, timer:null };
+
+function resetRing(){
+  const prog = $('#ring-progress');
+  prog.style.strokeDasharray = `${RING_C}`;
+  prog.style.strokeDashoffset = `${RING_C}`;
+  $('#ring-label').textContent = '3s';
+  $('#stage-icon-wrap').classList.remove('materialized');
+}
+
+function startGeneration(){
+  if(genState.running) return;
+  const row = state.cart.find(r => r.uid === state.selectedCartUid) || state.cart[0];
+  if(!row) return;
+  genState.running = true;
+  genState.remaining = 3;
+  const genBtn = $('#gen-btn');
+  genBtn.disabled = true;
+  $('#gen-note').textContent = 'Matérialisation en cours…';
+  $('#ring-label').textContent = `${genState.remaining}s`;
+
+  const stepMs = 1000;
+  const tick = () => {
+    const progressed = 3 - genState.remaining;
+    const ratio = progressed / 3;
+    const prog = $('#ring-progress');
+    prog.style.strokeDashoffset = `${RING_C * (1 - ratio)}`;
+    $('#ring-label').textContent = `${genState.remaining}s`;
+    if(genState.remaining <= 0){
+      clearInterval(genState.timer);
+      finishGeneration(row);
+      return;
+    }
+    genState.remaining -= 1;
+  };
+  tick();
+  genState.timer = setInterval(tick, stepMs);
+}
+
+function finishGeneration(row){
+  genState.running = false;
+  $('#stage-icon-wrap').classList.add('materialized');
+  $('#ring-label').textContent = '✓';
+  $('#gen-btn').classList.add('done');
+  $('#gen-btn').textContent = 'Objet matérialisé';
+  $('#gen-note').textContent = `${row.name} est apparu dans le monde réel.`;
+  moveCartItemToHistory(row);
+  setTimeout(() => { renderCart(); }, 900);
+}
+
+/* ---------- réintégration depuis l'historique ---------- */
+let pendingReintegration = null;
+function openReintegrationModal(rowUid){
+  const row = state.history.find(r => r.uid === rowUid);
+  if(!row) return;
+  pendingReintegration = row;
+  $('#modal-head-icon').classList.add('hidden');
+  $('#modal-title').textContent = row.name;
+  $('#modal-sub').textContent = `Que voulez-vous faire de « ${row.name} » (×${row.quantity}) ?`;
+  $('#modal-reintegrate-options').classList.remove('hidden');
+  $('#modal-qty-options').classList.add('hidden');
+  $('#modal-backdrop').classList.add('show');
+}
+function closeModal(){
+  pendingReintegration = null;
+  pendingQtyPick = null;
+  $('#modal-backdrop').classList.remove('show');
+}
+function reintegrateToOrigin(){
+  if(!pendingReintegration) return;
+  const row = pendingReintegration;
+  state.history = state.history.filter(r => r.uid !== row.uid);
+  renderHistory();
+  updateCounts();
+  closeModal();
+  state.activeCategoryId = row.catId;
+  goToRoot('objects');
+  setTimeout(() => flashTile(`.tile[data-action="pick-item"][data-item="${row.itemId}"]`), 260);
+}
+function reintegrateToCart(){
+  if(!pendingReintegration) return;
+  const row = pendingReintegration;
+  state.history = state.history.filter(r => r.uid !== row.uid);
+  addItemToCart(row.catId, row.itemId, row.quantity);
+  renderHistory();
+  updateCounts();
+  closeModal();
+  goToRoot('cart');
+}
+
+/* ---------- sélection de la quantité à ajouter au panier ---------- */
+let pendingQtyPick = null; // { catId, itemId, value } — SAC∞ : aucune limite (max) n'est plus appliquée
+function openQuantityModal(catId, itemId){
+  const item = findItem(catId, itemId);
+  const cat = findCategory(catId);
+  if(!item || !cat) return;
+  pendingQtyPick = { catId, itemId, value:item.quantity };
+  $('#modal-head-icon').classList.remove('hidden');
+  $('#modal-head-icon').innerHTML = iconSvg(item.icon);
+  $('#modal-title').textContent = item.name;
+  $('#modal-sub').textContent = `Choisissez la quantité : elle s'appliquera à tous les objets de « ${cat.name} ».`;
+  $('#modal-reintegrate-options').classList.add('hidden');
+  $('#modal-qty-options').classList.remove('hidden');
+  updateQtyModalDisplay();
+  $('#modal-backdrop').classList.add('show');
+}
+function updateQtyModalDisplay(){
+  if(!pendingQtyPick) return;
+  $('#qty-value').textContent = pendingQtyPick.value;
+  $('#qty-minus').disabled = pendingQtyPick.value <= 1;
+  $('#qty-plus').disabled = false; // SAC∞ : quantité illimitée
+}
+function stepQtyModal(delta){
+  if(!pendingQtyPick) return;
+  const next = pendingQtyPick.value + delta;
+  if(next < 1) return;
+  pendingQtyPick.value = next;
+  updateQtyModalDisplay();
+}
+function confirmQtyPick(){
+  if(!pendingQtyPick) return;
+  const cat = findCategory(pendingQtyPick.catId);
+  if(cat){
+    // le nombre choisi s'applique à tous les objets de la catégorie
+    cat.items.forEach(it => { it.quantity = pendingQtyPick.value; });
+  }
+  addItemToCart(pendingQtyPick.catId, pendingQtyPick.itemId, pendingQtyPick.value);
+  closeModal();
+  renderObjects();
+  renderCategories();
+}
+
+/* ============================================================
+   CLIC / ACTIVATION UNIFIEE (souris ET main)
+   ============================================================ */
+function activate(el){
+  if(!el) return;
+  if(el.closest && el.closest('#browse-pill')){
+    /* accès unique : ramène à la catégorie en cours si elle existe, sinon à la racine */
+    goToRoot(state.activeCategoryId ? 'objects' : 'categories');
+    return;
+  }
+  if(el.closest && el.closest('[data-screen="cart"]')){ goToRoot('cart'); return; }
+  if(el.closest && el.closest('[data-screen="history"]')){ goToRoot('history'); return; }
+  if(el.closest && el.closest('#back-btn')){ goBack(); return; }
+  if(el.closest && el.closest('#gen-btn')){ startGeneration(); return; }
+  if(el.closest && el.closest('#modal-opt-origin')){ reintegrateToOrigin(); return; }
+  if(el.closest && el.closest('#modal-opt-cart')){ reintegrateToCart(); return; }
+  if(el.closest && el.closest('#qty-minus')){ stepQtyModal(-1); return; }
+  if(el.closest && el.closest('#qty-plus')){ stepQtyModal(1); return; }
+  if(el.closest && el.closest('#qty-confirm')){ confirmQtyPick(); return; }
+  if(el.closest && el.closest('#modal-cancel')){ closeModal(); return; }
+  if(el.closest && el.closest('#modal-backdrop') && el.id === 'modal-backdrop'){ closeModal(); return; }
+
+  const cartQtyBtn = el.closest && el.closest('.cart-qty-btn');
+  if(cartQtyBtn){ adjustCartQty(Number(cartQtyBtn.dataset.uid), Number(cartQtyBtn.dataset.delta)); return; }
+
+  const removeEl = el.closest && el.closest('[data-action="remove-cart"]');
+  if(removeEl){ removeFromCart(Number(removeEl.dataset.uid)); return; }
+
+  const cartRow = el.closest && el.closest('[data-action="select-cart"]');
+  if(cartRow){ selectCartItem(Number(cartRow.dataset.uid)); return; }
+
+  const catTile = el.closest && el.closest('[data-action="open-category"]');
+  if(catTile){ openCategory(catTile.dataset.cat); return; }
+
+  const itemTile = el.closest && el.closest('[data-action="pick-item"]');
+  if(itemTile){ pickItem(itemTile.dataset.cat, itemTile.dataset.item); return; }
+
+  const histTile = el.closest && el.closest('[data-action="reintegrate"]');
+  if(histTile){ openReintegrationModal(Number(histTile.dataset.uid)); return; }
+}
+
+/* clic souris standard (fallback / accessibilité) */
+document.addEventListener('click', (e) => {
+  activate(e.target);
+});
+
+/* ============================================================
+   MEDIAPIPE HANDTRACKING
+   ============================================================ */
+const overlay = $('#overlay');
+const overlayTitle = $('#overlay-title');
+const overlayText = $('#overlay-text');
+const overlaySpinner = $('#overlay-spinner');
+const overlayBtn = $('#overlay-btn');
+const statusDot = $('#status-dot');
+const video = $('#cam-video');
+const cursorEl = $('#cursor');
+const cursorDotEl = $('#cursor-dot');
+const cursorProgress = $('#cursor-progress');
+const ghostEl = $('#ghost');
+
+let handLandmarker = null;
+let lastVideoTime = -1;
+let rafId = null;
+
+const cursor = { x: innerWidth/2, y: innerHeight/2, tx: innerWidth/2, ty: innerHeight/2 };
+const PINCH_START = 0.44;
+const PINCH_END = 0.64;
+let isPinched = false;
+let hoverEl = null;
+
+const drag = { active:false, el:null, catId:null, itemId:null, startX:0, startY:0 };
+
+function setHover(el){
+  if(hoverEl === el) return;
+  if(hoverEl) hoverEl.classList.remove('hover-target');
+  hoverEl = el;
+  if(hoverEl) hoverEl.classList.add('hover-target');
+}
+
+function hoverableAncestor(el){
+  if(!el) return null;
+  return el.closest('.tile, .cart-row, .cart-qty-btn, .qty-step-btn, .browse-pill, .icon-btn, .back-btn, #gen-btn, .remove, .m-btn, .m-cancel, #modal-backdrop');
+}
+
+function updateCursorVisual(){
+  cursorEl.style.left = `${cursor.x}px`;
+  cursorEl.style.top = `${cursor.y}px`;
+}
+
+function onPinchStart(){
+  isPinched = true;
+  cursorEl.classList.add('pinched');
+  const el = document.elementFromPoint(cursor.x, cursor.y);
+  const dragTile = el && el.closest ? el.closest('[data-draggable="true"]') : null;
+  if(dragTile){
+    drag.active = true;
+    drag.el = dragTile;
+    drag.catId = dragTile.dataset.cat;
+    drag.itemId = dragTile.dataset.item;
+    drag.startX = cursor.x;
+    drag.startY = cursor.y;
+    dragTile.classList.add('dragging');
+    ghostEl.innerHTML = iconSvg(findItem(drag.catId, drag.itemId)?.icon || 'notebook');
+    ghostEl.style.left = `${cursor.x}px`;
+    ghostEl.style.top = `${cursor.y}px`;
+    ghostEl.classList.add('show');
+  }
+}
+
+function onPinchEnd(){
+  isPinched = false;
+  cursorEl.classList.remove('pinched');
+  const el = document.elementFromPoint(cursor.x, cursor.y);
+
+  if(drag.active){
+    const moved = Math.hypot(cursor.x - drag.startX, cursor.y - drag.startY);
+    const cartBtn = el && el.closest ? el.closest('[data-screen="cart"]') : null;
+    if(cartBtn || moved > 140){
+      addItemToCart(drag.catId, drag.itemId);
+    } else if(moved < 24){
+      pickItem(drag.catId, drag.itemId);
+    }
+    if(drag.el) drag.el.classList.remove('dragging');
+    ghostEl.classList.remove('show');
+    drag.active = false; drag.el = null;
+    return;
+  }
+  activate(el);
+}
+
+function handLoop(){
+  rafId = requestAnimationFrame(handLoop);
+  if(!handLandmarker || video.readyState < 2) return;
+  if(video.currentTime === lastVideoTime) return;
+  lastVideoTime = video.currentTime;
+
+  const result = handLandmarker.detectForVideo(video, performance.now());
+  const hands = result && result.landmarks ? result.landmarks : [];
+
+  if(hands.length > 0){
+    const lm = hands[0];
+    const thumbTip = lm[4], indexTip = lm[8], wrist = lm[0], middleMcp = lm[9];
+    const handSize = Math.hypot(middleMcp.x - wrist.x, middleMcp.y - wrist.y) || 0.001;
+    const pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y) / handSize;
+
+    // le flux vidéo est affiché en miroir (scaleX(-1)) donc on inverse x pour le curseur écran
+    const nx = 1 - indexTip.x;
+    const ny = indexTip.y;
+    cursor.tx = nx * innerWidth;
+    cursor.ty = ny * innerHeight;
+
+    cursorEl.classList.remove('hidden');
+    cursorEl.style.opacity = '1';
+    statusDot.classList.add('live');
+
+    if(!isPinched && pinchDist < PINCH_START){ onPinchStart(); }
+    else if(isPinched && pinchDist > PINCH_END){ onPinchEnd(); }
+  } else {
+    statusDot.classList.remove('live');
+  }
+
+  // lissage
+  cursor.x += (cursor.tx - cursor.x) * 0.35;
+  cursor.y += (cursor.ty - cursor.y) * 0.35;
+  updateCursorVisual();
+
+  if(drag.active){
+    ghostEl.style.left = `${cursor.x}px`;
+    ghostEl.style.top = `${cursor.y}px`;
+  }
+
+  const el = document.elementFromPoint(cursor.x, cursor.y);
+  setHover(hoverableAncestor(el));
+}
+
+async function initCamera(){
+  const stream = await navigator.mediaDevices.getUserMedia({ video:{ width:640, height:480 }, audio:false });
+  video.srcObject = stream;
+  await new Promise(res => { video.onloadedmetadata = () => { video.play(); res(); }; });
+}
+
+async function initHandLandmarker(){
+  const visionMod = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+  const { HandLandmarker, FilesetResolver } = visionMod;
+  const filesetResolver = await FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+  );
+  handLandmarker = await HandLandmarker.createFromOptions(filesetResolver, {
+    baseOptions:{
+      modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+      delegate:'GPU'
+    },
+    runningMode:'VIDEO',
+    numHands:1
+  });
+}
+
+async function boot(){
+  try{
+    overlayTitle.textContent = 'Initialisation de la caméra…';
+    overlayText.textContent = "SAC∞ a besoin d'accéder à votre webcam pour détecter votre main. Tout le traitement reste local, dans votre navigateur.";
+    await initCamera();
+    overlayTitle.textContent = 'Chargement du modèle de suivi de main…';
+    await initHandLandmarker();
+    overlay.classList.add('hidden');
+    handLoop();
+  } catch(err){
+    console.error(err);
+    document.body.classList.add('no-camera');
+    overlaySpinner.classList.add('hidden');
+    if(err && err.name === 'NotAllowedError'){
+      overlayTitle.textContent = 'Accès à la caméra refusé';
+      overlayText.textContent = "SAC∞ ne peut pas fonctionner en mode main sans caméra. Autorisez l'accès dans les réglages de votre navigateur puis réessayez. Vous pouvez aussi continuer à la souris.";
+    } else {
+      overlayTitle.textContent = 'Le suivi de main est indisponible';
+      overlayText.textContent = "Impossible de charger le module de détection de main (connexion réseau ou navigateur incompatible). Vous pouvez continuer à utiliser SAC∞ à la souris.";
+    }
+    overlayBtn.textContent = 'Continuer à la souris';
+    overlayBtn.classList.remove('hidden');
+    overlayBtn.onclick = () => overlay.classList.add('hidden');
+  }
+}
+
+/* ============================================================
+   INITIALISATION
+   ============================================================ */
+renderAll();
+resetRing();
+boot();
+</script>
+</body>
+</html>

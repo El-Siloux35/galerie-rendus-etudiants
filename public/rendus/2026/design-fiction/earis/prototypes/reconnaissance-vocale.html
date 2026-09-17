@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voix — forme réactive</title>
+<style>
+  :root {
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #050507;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  canvas {
+    position: fixed;
+    inset: 0;
+    display: block;
+  }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 40%, rgba(20,16,30,0.92), rgba(3,3,5,0.98));
+    backdrop-filter: blur(6px);
+    transition: opacity 0.6s ease, visibility 0.6s ease;
+    z-index: 10;
+  }
+  .overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .panel {
+    max-width: 420px;
+    padding: 40px 36px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    background: rgba(255,255,255,0.03);
+  }
+  .panel h1 {
+    margin: 0 0 12px;
+    font-size: 21px;
+    font-weight: 600;
+    color: #f2eef9;
+    letter-spacing: -0.01em;
+  }
+  .panel p {
+    margin: 0 0 26px;
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: rgba(238,232,250,0.6);
+  }
+  .panel p.error-text {
+    color: rgba(255,150,140,0.85);
+  }
+  button.start-btn {
+    appearance: none;
+    border: none;
+    cursor: pointer;
+    padding: 13px 26px;
+    border-radius: 999px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: #0a0710;
+    background: linear-gradient(135deg, #a879ee, #7e38df);
+    color: #fbf9ff;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  button.start-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(126,56,223,0.35);
+  }
+  button.start-btn:active {
+    transform: translateY(0);
+  }
+
+  .readout {
+    position: fixed;
+    left: 20px;
+    bottom: 18px;
+    font-size: 11px;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.28);
+    letter-spacing: 0.01em;
+    z-index: 5;
+    user-select: none;
+    transition: opacity 0.4s ease;
+  }
+  .readout.hidden { opacity: 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    canvas { filter: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+
+<div class="readout hidden" id="readout"></div>
+
+<div class="overlay" id="overlay">
+  <div class="panel">
+    <h1 id="panel-title">Une forme qui écoute</h1>
+    <p id="panel-text">
+      Cette page dessine une forme violette abstraite dont le volume contrôle
+      directement la taille — elle gonfle quand vous parlez fort, se rétracte
+      quand vous chuchotez — pendant que la hauteur et le timbre de votre voix
+      font onduler son contour. Rien n'est enregistré ni transcrit.
+    </p>
+    <button class="start-btn" id="start-btn">Activer le micro</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const canvas = document.getElementById("scene");
+  const ctx = canvas.getContext("2d");
+  const overlay = document.getElementById("overlay");
+  const panelTitle = document.getElementById("panel-title");
+  const panelText = document.getElementById("panel-text");
+  const startBtn = document.getElementById("start-btn");
+  const readout = document.getElementById("readout");
+
+  let W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // ---------- petit générateur de bruit de valeur (sans librairie) ----------
+  const NOISE_SIZE = 256;
+  const noiseTable = new Float32Array(NOISE_SIZE);
+  for (let i = 0; i < NOISE_SIZE; i++) noiseTable[i] = Math.random() * 2 - 1;
+  function noise1D(x) {
+    const xi = Math.floor(x) % NOISE_SIZE;
+    const xf = x - Math.floor(x);
+    const i0 = ((xi % NOISE_SIZE) + NOISE_SIZE) % NOISE_SIZE;
+    const i1 = (i0 + 1) % NOISE_SIZE;
+    const a = noiseTable[i0];
+    const b = noiseTable[i1];
+    const t = xf * xf * (3 - 2 * xf); // smoothstep
+    return a + (b - a) * t;
+  }
+
+  // ---------- état audio ----------
+  let audioCtx = null;
+  let analyser = null;
+  let timeData = null;      // Float32, domaine temporel, pour volume + hauteur
+  let freqData = null;      // Uint8, domaine fréquentiel, pour le timbre
+  let sourceStream = null;
+
+  // valeurs brutes -> valeurs lissées affichées
+  const smooth = {
+    volume: 0,        // 0..1, taille de la forme
+    pitch: 180,        // Hz estimés
+    pitchNorm: 0.3,    // 0..1 normalisé -> vitesse d'ondulation
+    timbre: 0.3        // 0..1 (centroïde spectral normalisé) -> complexité du contour
+  };
+
+  // lissage asymétrique : montée rapide (la forme gonfle vite dès que la voix
+  // monte) et descente plus lente (elle se rétracte doucement, comme une
+  // respiration) plutôt qu'un simple lerp symétrique qui aurait un rendu plat.
+  const VOL_ATTACK = 0.34;
+  const VOL_RELEASE = 0.09;
+  const SMOOTH_PITCH = 0.1;
+  const SMOOTH_TIMBRE = 0.12;
+
+  function smoothToward(current, target, attack, release) {
+    const rate = target > current ? attack : release;
+    return current + (target - current) * rate;
+  }
+
+  function rmsVolume(buf) {
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    return Math.sqrt(sum / buf.length);
+  }
+
+  // détection de hauteur par autocorrélation (méthode ACF classique)
+  function detectPitch(buf, sampleRate) {
+    const SIZE = buf.length;
+    const rms = rmsVolume(buf);
+    if (rms < 0.008) return -1; // trop silencieux, pas fiable
+
+    let r1 = 0, r2 = SIZE - 1;
+    const threshold = 0.2;
+    for (let i = 0; i < SIZE / 2; i++) {
+      if (Math.abs(buf[i]) < threshold) { r1 = i; break; }
+    }
+    for (let i = 1; i < SIZE / 2; i++) {
+      if (Math.abs(buf[SIZE - i]) < threshold) { r2 = SIZE - i; break; }
+    }
+    const trimmed = buf.slice(r1, r2);
+    const n = trimmed.length;
+    if (n < 8) return -1;
+
+    const c = new Float32Array(n);
+    for (let lag = 0; lag < n; lag++) {
+      let sum = 0;
+      for (let j = 0; j < n - lag; j++) sum += trimmed[j] * trimmed[j + lag];
+      c[lag] = sum;
+    }
+
+    let d = 0;
+    while (d + 1 < n && c[d] > c[d + 1]) d++;
+
+    let maxVal = -1, maxPos = -1;
+    for (let i = d; i < n; i++) {
+      if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
+    }
+    if (maxPos <= 0 || maxPos >= n - 1) return -1;
+
+    const x1 = c[maxPos - 1], x2 = c[maxPos], x3 = c[maxPos + 1];
+    const a = (x1 + x3 - 2 * x2) / 2;
+    const b = (x3 - x1) / 2;
+    const shift = a ? -b / (2 * a) : 0;
+    const period = maxPos + shift;
+    const freq = sampleRate / period;
+    if (freq < 60 || freq > 1000) return -1; // hors plage vocale plausible
+    return freq;
+  }
+
+  function spectralCentroid(freq, sampleRate, fftSize) {
+    let num = 0, den = 0;
+    const nyquist = sampleRate / 2;
+    for (let i = 0; i < freq.length; i++) {
+      const f = (i / freq.length) * nyquist;
+      const mag = freq[i];
+      num += f * mag;
+      den += mag;
+    }
+    return den > 0 ? num / den : 0;
+  }
+
+  // ---------- démarrage micro ----------
+  async function startMic() {
+    startBtn.disabled = true;
+    startBtn.textContent = "Connexion…";
+    try {
+      sourceStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: false,
+          autoGainControl: false
+        },
+        video: false
+      });
+
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") await audioCtx.resume();
+
+      const source = audioCtx.createMediaStreamSource(sourceStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.4;
+      source.connect(analyser);
+      // pas de connexion vers destination : on ne veut aucun retour audio
+
+      timeData = new Float32Array(analyser.fftSize);
+      freqData = new Uint8Array(analyser.frequencyBinCount);
+
+      overlay.classList.add("hidden");
+      readout.classList.remove("hidden");
+      requestAnimationFrame(loop);
+    } catch (err) {
+      handleMicError(err);
+    }
+  }
+
+  function handleMicError(err) {
+    let title = "Micro indisponible";
+    let msg = "Une erreur inattendue est survenue. Vous pouvez réessayer.";
+    const name = err && err.name;
+
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+      title = "Accès au micro refusé";
+      msg = "Cette page a besoin du micro pour réagir à votre voix. Autorisez l'accès dans les réglages de votre navigateur, puis réessayez — aucun son n'est enregistré ni envoyé où que ce soit.";
+    } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+      title = "Aucun micro détecté";
+      msg = "Votre appareil ne semble pas avoir de micro accessible. Branchez-en un et réessayez.";
+    } else if (name === "NotReadableError") {
+      title = "Micro déjà utilisé";
+      msg = "Une autre application semble utiliser votre micro. Fermez-la puis réessayez.";
+    }
+
+    panelTitle.textContent = title;
+    panelText.textContent = msg;
+    panelText.classList.add("error-text");
+    startBtn.disabled = false;
+    startBtn.textContent = "Réessayer";
+    overlay.classList.remove("hidden");
+  }
+
+  startBtn.addEventListener("click", startMic);
+
+  // ---------- boucle de rendu ----------
+  let t = 0;
+  const POINTS = 10;
+
+  function loop() {
+    requestAnimationFrame(loop);
+    t += 0.016;
+
+    analyser.getFloatTimeDomainData(timeData);
+    analyser.getByteFrequencyData(freqData);
+
+    // gain élevé + courbe douce pour bien séparer chuchotement et voix forte
+    const rms = rmsVolume(timeData);
+    const rawVolume = Math.min(1, Math.pow(rms * 7.5, 0.85));
+    const pitchHz = detectPitch(timeData, audioCtx.sampleRate);
+    const centroid = spectralCentroid(freqData, audioCtx.sampleRate, analyser.fftSize);
+    const rawTimbre = Math.min(1, centroid / 3800);
+
+    smooth.volume = smoothToward(smooth.volume, rawVolume, VOL_ATTACK, VOL_RELEASE);
+
+    if (pitchHz > 0) {
+      const norm = Math.min(1, Math.max(0, (pitchHz - 80) / (420 - 80)));
+      smooth.pitchNorm += (norm - smooth.pitchNorm) * SMOOTH_PITCH;
+      smooth.pitch += (pitchHz - smooth.pitch) * SMOOTH_PITCH;
+    } else {
+      // pas de hauteur détectable (silence/bruit) : on relâche doucement vers le centre
+      smooth.pitchNorm += (0.3 - smooth.pitchNorm) * 0.03;
+    }
+
+    smooth.timbre += (rawTimbre - smooth.timbre) * SMOOTH_TIMBRE;
+
+    draw(smooth.volume, smooth.pitchNorm, smooth.timbre);
+    updateReadout(smooth.volume, smooth.pitch, smooth.timbre);
+  }
+
+  // teinte fixe autour de #7E38DF (violet) — on ne fait varier que la
+  // luminosité / saturation / opacité autour de cette teinte, jamais la
+  // couleur elle-même, pour rester "principalement violet".
+  const BASE_HUE = 265;
+
+  function buildBlobPoints(cx, cy, radius, pitchNorm, timbre, volume) {
+    // hauteur -> vitesse d'ondulation ; timbre -> complexité (deux octaves de bruit)
+    const rotSpeed = 0.12 + pitchNorm * 0.55;
+    const wobbleAmp = 0.16 + volume * 0.42;        // le volume garde une influence sur l'amplitude, pour l'effet "respiration"
+    const detail = 0.4 + timbre * 1.6;             // plus de détail = contour plus complexe
+
+    const pts = [];
+    for (let i = 0; i < POINTS; i++) {
+      const angle = (i / POINTS) * Math.PI * 2;
+      const n1 = noise1D(i * 0.9 + t * rotSpeed);
+      const n2 = noise1D(i * detail * 2.3 - t * rotSpeed * 1.4 + 50);
+      const n = n1 * 0.7 + n2 * 0.3 * timbre;      // la seconde couche ne s'exprime que si le timbre est riche
+      const r = radius * (1 + n * wobbleAmp);
+      pts.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r });
+    }
+    return pts;
+  }
+
+  function tracePolygon(pts) {
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const p0 = pts[i];
+      const p1 = pts[(i + 1) % pts.length];
+      const mx = (p0.x + p1.x) / 2;
+      const my = (p0.y + p1.y) / 2;
+      if (i === 0) ctx.moveTo(mx, my);
+      ctx.quadraticCurveTo(p0.x, p0.y, mx, my);
+    }
+    ctx.closePath();
+  }
+
+  function draw(volume, pitchNorm, timbre) {
+    ctx.clearRect(0, 0, W, H);
+
+    const cx = W / 2;
+    const cy = H / 2;
+
+    // le VOLUME est le facteur dominant de la taille : d'un chuchotement
+    // presque invisible à une voix forte qui remplit largement l'écran.
+    const baseRadius = Math.min(W, H) * 0.10;
+    const volScale = 0.35 + volume * 2.3;          // ~0.35x (silence) -> ~2.65x (voix forte)
+    const radius = baseRadius * volScale;
+
+    const lightness = 42 + volume * 20;            // plus fort = plus lumineux
+    const sat = 68 + volume * 15;
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+
+    // --- halo externe, très diffus : donne l'impression d'une aura qui respire
+    ctx.filter = "blur(70px)";
+    const outerR = radius * 2.1;
+    const outerGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, outerR);
+    outerGrad.addColorStop(0, `hsla(${BASE_HUE}, ${sat}%, ${lightness + 10}%, ${0.22 + volume * 0.28})`);
+    outerGrad.addColorStop(1, `hsla(${BASE_HUE}, ${sat}%, ${lightness}%, 0)`);
+    ctx.fillStyle = outerGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- halo intermédiaire, plus dense
+    ctx.filter = "blur(46px)";
+    const midR = radius * 1.5;
+    const midGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, midR);
+    midGrad.addColorStop(0, `hsla(${BASE_HUE}, ${sat}%, ${lightness + 14}%, ${0.35 + volume * 0.3})`);
+    midGrad.addColorStop(1, `hsla(${BASE_HUE}, ${sat}%, ${lightness}%, 0)`);
+    ctx.fillStyle = midGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, midR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // --- corps principal : forme organique, contour toujours fondu (jamais net)
+    ctx.filter = "blur(26px)";
+    const pts = buildBlobPoints(cx, cy, radius, pitchNorm, timbre, volume);
+    tracePolygon(pts);
+    const coreGrad = ctx.createRadialGradient(
+      cx - radius * 0.2, cy - radius * 0.25, 0,
+      cx, cy, radius * 1.15
+    );
+    coreGrad.addColorStop(0, `hsla(${BASE_HUE}, ${sat}%, ${lightness + 26}%, 0.95)`);
+    coreGrad.addColorStop(0.45, `hsla(${BASE_HUE}, ${sat}%, ${lightness + 8}%, 0.85)`);
+    coreGrad.addColorStop(0.78, `hsla(${BASE_HUE}, ${sat}%, ${lightness - 6}%, 0.55)`);
+    coreGrad.addColorStop(1, `hsla(${BASE_HUE}, ${sat}%, ${lightness - 10}%, 0)`);
+    ctx.fillStyle = coreGrad;
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function updateReadout(volume, pitchHz, timbre) {
+    const vPct = Math.round(volume * 100);
+    const p = pitchHz > 0 ? Math.round(pitchHz) : 0;
+    const tPct = Math.round(timbre * 100);
+    readout.textContent =
+      `volume ${vPct}%   ·   hauteur ${p ? p + " Hz" : "—"}   ·   timbre ${tPct}%`;
+  }
+
+})();
+</script>
+</body>
+</html>
