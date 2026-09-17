@@ -10,7 +10,3 @@ tags: [Prospective, Prototypage]
 Workshop mené sur une semaine. Chaque groupe invente un monde,
 identifie le besoin inédit qui en découle, l’incarne dans un scénario d’usage
 porté par un personnage, puis prototype les écrans que ce scénario réclame.
-
-La consigne écarte deux réflexes : la panique de contrôle et l’écran
-holographique bleu. Un futur peut être lent, étrange ou simplement différent,
-et un monde qui a ralenti se conçoit aussi bien qu’un monde de surveillance.
