@@ -7,7 +7,7 @@ cover: ../../assets/covers/design-fiction.png
 tags: [Prospective, Prototypage]
 ---
 
-Cinq jours, en groupe de deux à quatre. Chaque groupe invente un monde,
+Workshop mené sur une semaine. Chaque groupe invente un monde,
 identifie le besoin inédit qui en découle, l’incarne dans un scénario d’usage
 porté par un personnage, puis prototype les écrans que ce scénario réclame.
 
