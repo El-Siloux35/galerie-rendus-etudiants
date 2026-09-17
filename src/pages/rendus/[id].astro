@@ -19,6 +19,8 @@ const siblings = (await getCollection('projects', ({ data }) => !data.draft))
   .filter((p) => p.data.subject.id === project.data.subject.id)
   .sort((a, b) => a.id.localeCompare(b.id));
 const position = siblings.findIndex((p) => p.id === project.id);
+// La liste boucle : depuis le premier rendu, « précédent » mène au dernier.
+const previous = siblings[(position - 1 + siblings.length) % siblings.length];
 const next = siblings[(position + 1) % siblings.length];
 ---
 
@@ -103,11 +105,17 @@ const next = siblings[(position + 1) % siblings.length];
     }
 
     {
-      next && next.id !== project.id && (
-        <a class="next" href={`/rendus/${next.id}`}>
-          <span class="mono">Rendu suivant</span>
-          <span class="next__title">{next.data.title}</span>
-        </a>
+      siblings.length > 1 && (
+        <nav class="voisins" aria-label="Autres rendus du sujet">
+          <a class="voisin voisin--avant" href={`/rendus/${previous.id}`}>
+            <span class="mono">← Rendu précédent</span>
+            <span class="voisin__titre">{previous.data.title}</span>
+          </a>
+          <a class="voisin voisin--apres" href={`/rendus/${next.id}`}>
+            <span class="mono">Rendu suivant →</span>
+            <span class="voisin__titre">{next.data.title}</span>
+          </a>
+        </nav>
       )
     }
   </article>
@@ -255,25 +263,46 @@ const next = siblings[(position + 1) % siblings.length];
       gap: clamp(2.5rem, 7vh, 4.5rem);
     }
 
-    .next {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      gap: 0.35rem;
+    /* Les deux voisins se font face, chacun poussé vers son bord : la
+       direction se lit avant même la flèche. */
+    .voisins {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem clamp(1.5rem, 5vw, 4rem);
       margin-top: clamp(4rem, 12vh, 8rem);
       padding-block: 2rem;
       border-top: var(--rule) solid var(--line-strong);
     }
-    .next__title {
+
+    .voisin {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .voisin--apres {
+      text-align: right;
+    }
+
+    .voisin__titre {
       font-size: var(--step-2);
       font-weight: 500;
       letter-spacing: -0.03em;
       font-variation-settings: 'wght' 500, 'wdth' 90;
       transition: font-variation-settings 0.6s var(--ease);
+      text-wrap: balance;
     }
-    .next:hover .next__title {
+    .voisin:hover .voisin__titre,
+    .voisin:focus-visible .voisin__titre {
       font-variation-settings: 'wght' 500, 'wdth' 112;
+    }
+
+    @media (max-width: 40rem) {
+      .voisins {
+        grid-template-columns: 1fr;
+      }
+      .voisin--apres {
+        text-align: left;
+      }
     }
   </style>
 </Base>
