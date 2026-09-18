@@ -147,9 +147,11 @@ const { title, description = "Les rendus des étudiants en design d’interface.
         transition: color 0.3s var(--ease);
       }
 
-      .site-head__nav a:hover,
-      #theme-toggle:hover {
-        color: var(--ink);
+      @media (hover: hover) {
+        .site-head__nav a:hover,
+        #theme-toggle:hover {
+          color: var(--ink);
+        }
       }
 
       #theme-toggle {

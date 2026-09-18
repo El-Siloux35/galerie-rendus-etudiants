@@ -207,11 +207,17 @@ const next = siblings[(position + 1) % siblings.length];
         background-color 0.3s var(--ease);
     }
 
-    .tags a:hover,
     .tags a:focus-visible {
       color: var(--paper);
       background: var(--ink);
       border-color: var(--ink);
+    }
+    @media (hover: hover) {
+      .tags a:hover {
+        color: var(--paper);
+        background: var(--ink);
+        border-color: var(--ink);
+      }
     }
 
     .project__cover {
@@ -291,9 +297,13 @@ const next = siblings[(position + 1) % siblings.length];
       transition: font-variation-settings 0.6s var(--ease);
       text-wrap: balance;
     }
-    .voisin:hover .voisin__titre,
     .voisin:focus-visible .voisin__titre {
       font-variation-settings: 'wght' 500, 'wdth' 112;
+    }
+    @media (hover: hover) {
+      .voisin:hover .voisin__titre {
+        font-variation-settings: 'wght' 500, 'wdth' 112;
+      }
     }
 
     @media (max-width: 40rem) {

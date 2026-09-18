@@ -185,9 +185,11 @@ const period =
         background-color 0.3s var(--ease);
     }
 
-    .filters button:hover {
-      color: var(--ink);
-      border-color: var(--line-strong);
+    @media (hover: hover) {
+      .filters button:hover {
+        color: var(--ink);
+        border-color: var(--line-strong);
+      }
     }
 
     /* L'état actif s'inverse : c'est le seul aplat plein de la page, donc
@@ -226,9 +228,13 @@ const period =
       transform-origin: left;
       transition: transform 0.6s var(--ease);
     }
-    .subjects a:hover::before,
     .subjects a:focus-visible::before {
       transform: scaleX(1);
+    }
+    @media (hover: hover) {
+      .subjects a:hover::before {
+        transform: scaleX(1);
+      }
     }
 
     .row__title {
@@ -256,15 +262,23 @@ const period =
 
     /* L'axe de largeur de la variable fait le travail : le titre s'élargit
        au lieu de simplement grossir, et la ligne ne saute pas. */
-    .subjects a:hover .row__title,
     .subjects a:focus-visible .row__title {
       transform: translateX(clamp(0.4rem, 1.5vw, 1.5rem));
       font-variation-settings: 'wght' 500, 'wdth' 112;
     }
-    .subjects a:hover .row__arrow,
     .subjects a:focus-visible .row__arrow {
       transform: translateX(0.45rem);
       color: var(--ink);
+    }
+    @media (hover: hover) {
+      .subjects a:hover .row__title {
+        transform: translateX(clamp(0.4rem, 1.5vw, 1.5rem));
+        font-variation-settings: 'wght' 500, 'wdth' 112;
+      }
+      .subjects a:hover .row__arrow {
+        transform: translateX(0.45rem);
+        color: var(--ink);
+      }
     }
 
     .empty {

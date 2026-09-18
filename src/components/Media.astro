@@ -171,8 +171,10 @@ const figmaEmbed = item.type === 'figma' ? toFigmaEmbed(item.url) : null;
     color: var(--muted);
     transition: color 0.3s var(--ease);
   }
-  .media__out:hover {
-    color: var(--ink);
+  @media (hover: hover) {
+    .media__out:hover {
+      color: var(--ink);
+    }
   }
 
   .media__frame {
@@ -240,8 +242,10 @@ const figmaEmbed = item.type === 'figma' ? toFigmaEmbed(item.url) : null;
       border-color 0.3s var(--ease),
       opacity 0.3s var(--ease);
   }
-  .pdf__bar button:hover:not(:disabled) {
-    border-color: var(--line-strong);
+  @media (hover: hover) {
+    .pdf__bar button:hover:not(:disabled) {
+      border-color: var(--line-strong);
+    }
   }
   .pdf__bar button:disabled {
     opacity: 0.3;
@@ -273,8 +277,10 @@ const figmaEmbed = item.type === 'figma' ? toFigmaEmbed(item.url) : null;
     background: var(--veil);
     transition: background-color 0.4s var(--ease);
   }
-  .media__launch:hover {
-    background: color-mix(in srgb, var(--ink) 10%, transparent);
+  @media (hover: hover) {
+    .media__launch:hover {
+      background: color-mix(in srgb, var(--ink) 10%, transparent);
+    }
   }
   .media__launch-title {
     font-size: var(--step-2);

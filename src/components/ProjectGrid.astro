@@ -68,10 +68,18 @@ const subjectTitles = new Map(
       filter 0.6s var(--ease);
   }
 
-  .card:hover .card__img,
   .card:focus-visible .card__img {
     transform: scale(1.02);
     filter: grayscale(0) contrast(1);
+  }
+
+  /* Réservé aux pointeurs qui survolent : sur écran tactile, un style de
+     survol obligerait à appuyer deux fois pour ouvrir le rendu. */
+  @media (hover: hover) {
+    .card:hover .card__img {
+      transform: scale(1.02);
+      filter: grayscale(0) contrast(1);
+    }
   }
 
   .card__title {
