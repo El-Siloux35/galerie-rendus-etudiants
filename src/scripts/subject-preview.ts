@@ -163,8 +163,14 @@ export function initSubjectPreview() {
   // --- Ouverture / fermeture --------------------------------------------
   let currentSrc = links[0].dataset.previewSrc!;
 
-  const open = () => gsap.to(u.uOpen, { value: 1, duration: 0.5, ease: 'power2.out' });
-  const close = () => gsap.to(u.uOpen, { value: 0, duration: 0.35, ease: 'power2.in' });
+  // `overwrite` est indispensable : par défaut GSAP laisse deux animations
+  // coexister sur la même propriété, et lors d'un aller-retour rapide celle
+  // qui ouvre pouvait survivre à celle qui ferme, laissant la vignette
+  // accrochée au curseur.
+  const open = () =>
+    gsap.to(u.uOpen, { value: 1, duration: 0.5, ease: 'power2.out', overwrite: true });
+  const close = () =>
+    gsap.to(u.uOpen, { value: 0, duration: 0.35, ease: 'power2.in', overwrite: true });
 
   const swapTo = (src: string) => {
     if (src === currentSrc) return;
@@ -179,6 +185,7 @@ export function initSubjectPreview() {
         value: 1,
         duration: 0.45,
         ease: 'power2.inOut',
+        overwrite: true,
         onComplete: () => {
           u.tCurrent.value = next.texture;
           u.uRatioA.value = next.ratio;
@@ -204,7 +211,18 @@ export function initSubjectPreview() {
       open();
     });
   }
-  list.addEventListener('pointerleave', close);
+  // `pointerleave` sur le conteneur ratait les sorties rapides ou obliques.
+  // `pointerover` se déclenche à chaque changement d'élément survolé : si le
+  // nouvel élément n'est pas une ligne, la vignette se ferme, où qu'aille le
+  // curseur dans la page.
+  document.addEventListener('pointerover', (event) => {
+    const cible = event.target;
+    if (!(cible instanceof Element) || !cible.closest('[data-preview-src]')) close();
+  });
+
+  // Sortie par le bord de la fenêtre : aucun `pointerover` ne suit.
+  document.addEventListener('pointerleave', close);
+  window.addEventListener('blur', close);
 
   // --- Boucle ------------------------------------------------------------
   let frame = 0;
